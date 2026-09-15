@@ -1,0 +1,121 @@
+---
+// Right inspector: run configuration (providers, formats, guarantees)
+// and the artifacts this run will produce / has produced.
+import ProviderIcon from './ProviderIcon.astro';
+import Icon from './Icon.astro';
+import { providers, outputFormats, defaultRunConfig, artifacts } from '../content/console.js';
+---
+<div class="insp">
+  <section>
+    <h3><Icon name="network" size={14} /> Target clouds</h3>
+    <p class="hint">Where the sandbox provisions. Pick one, or compare across providers with proof.</p>
+    <div class="prov-grid">
+      {providers.map((p) => (
+        <button class={`prov ${defaultRunConfig.providers.includes(p.id) ? 'on' : ''}`}>
+          <ProviderIcon id={p.id} size={16} /> {p.name}
+        </button>
+      ))}
+    </div>
+  </section>
+
+  <section>
+    <h3><Icon name="doc" size={14} /> Output formats</h3>
+    <p class="hint">What the deliverable contains. The artifact library stores all of them.</p>
+    <div class="fmt-grid">
+      {outputFormats.map((f) => (
+        <button class={`fmt ${defaultRunConfig.formats.includes(f.id) ? 'on' : ''}`}>
+          <span>{f.label}</span>
+          <span class="fmt-kind mono">{f.kind}</span>
+        </button>
+      ))}
+    </div>
+  </section>
+
+  <section>
+    <h3><Icon name="sliders" size={14} /> Guarantees</h3>
+    <div class="guarantee">
+      <div>
+        <div class="g-title"><Icon name="repeat" size={14} /> Idempotent result</div>
+        <div class="g-desc">Re-running the deliverable converges to the same state — no drift, no double-apply.</div>
+      </div>
+      <span class={`toggle ${defaultRunConfig.idempotent ? 'on' : ''}`}><span class="knob"></span></span>
+    </div>
+    <div class="guarantee">
+      <div>
+        <div class="g-title"><Icon name="shield" size={14} /> Destroy sandbox after handover</div>
+        <div class="g-desc">Credentials and resources are torn down; only artifacts and evidence persist.</div>
+      </div>
+      <span class={`toggle ${defaultRunConfig.destroyAfter ? 'on' : ''}`}><span class="knob"></span></span>
+    </div>
+    <div class="guarantee">
+      <div>
+        <div class="g-title"><Icon name="clock" size={14} /> Max sandbox time</div>
+        <div class="g-desc">Hard stop — the sandbox burns down even if the task is mid-flight.</div>
+      </div>
+      <span class="mono budget">{defaultRunConfig.maxHours}h</span>
+    </div>
+  </section>
+
+  <section>
+    <h3><Icon name="folder" size={14} /> Artifacts</h3>
+    <div class="art-list">
+      {artifacts.map((a) => (
+        <div class="art">
+          <div class="art-top">
+            <span class="art-name mono">{a.id}</span>
+            <span class="art-size mono">{a.size}</span>
+          </div>
+          <div class="art-note">{a.note}</div>
+        </div>
+      ))}
+    </div>
+    <p class="hint foot">Delivered runs keep artifacts + evidence forever; the sandbox itself is gone.</p>
+  </section>
+</div>
+
+<style>
+  .insp { padding: 22px 18px; display: flex; flex-direction: column; gap: 28px }
+  section h3 {
+    font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--muted); display: flex; align-items: center; gap: 7px; margin-bottom: 8px;
+  }
+  .hint { font-size: 12px; color: var(--muted2); line-height: 1.5; margin-bottom: 12px }
+  .hint.foot { margin: 12px 0 0 }
+
+  .prov-grid { display: flex; gap: 8px }
+  .prov {
+    flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    padding: 9px 6px; font-size: 12.5px; font-weight: 500; border-radius: 10px;
+    background: var(--panel2); border: 1px solid var(--line2); color: var(--muted); cursor: pointer;
+  }
+  .prov.on { border-color: var(--accent); color: var(--text); background: var(--accent-dim) }
+
+  .fmt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px }
+  .fmt {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+    padding: 9px 11px; font-size: 12.5px; border-radius: 10px; text-align: left;
+    background: var(--panel2); border: 1px solid var(--line2); color: var(--muted); cursor: pointer;
+  }
+  .fmt.on { border-color: var(--accent); color: var(--text); background: var(--accent-dim) }
+  .fmt-kind { font-size: 9.5px; color: var(--muted2); text-transform: uppercase; letter-spacing: .05em }
+  .fmt.on .fmt-kind { color: var(--accent) }
+
+  .guarantee { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 10px 0; border-bottom: 1px dashed var(--line2) }
+  .guarantee:last-child { border-bottom: none }
+  .g-title { font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 7px; margin-bottom: 3px }
+  .g-title svg { color: var(--accent) }
+  .g-desc { font-size: 11.5px; color: var(--muted2); line-height: 1.5 }
+  .budget { font-size: 13px; color: var(--accent); padding-top: 2px }
+
+  .toggle { width: 34px; height: 20px; border-radius: 99px; background: var(--line2); position: relative; flex-shrink: 0; cursor: pointer; transition: .2s }
+  .toggle .knob { position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: var(--muted); transition: .2s }
+  .toggle.on { background: var(--accent) }
+  .toggle.on .knob { left: 17px; background: #160802 }
+
+  .art-list { display: flex; flex-direction: column; gap: 8px }
+  .art { background: var(--panel2); border: 1px solid var(--line2); border-radius: 10px; padding: 10px 12px }
+  .art-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px }
+  .art-name { font-size: 12px; color: var(--accent) }
+  .art-size { font-size: 10.5px; color: var(--muted2) }
+  .art-note { font-size: 11.5px; color: var(--muted) }
+</style>

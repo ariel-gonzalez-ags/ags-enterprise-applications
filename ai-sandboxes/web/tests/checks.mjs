@@ -50,9 +50,14 @@ check('home: auth.js included (Base auth prop)', home.includes('/js/auth.js'));
 check('home: hidden console link for signed-in users', home.includes('data-auth="protected-link"'));
 
 const app = read('app/index.html');
-check('app: protected placeholder renders', app.includes('Your sandbox console'));
+check('app: console three-pane shell', app.includes('TaskRail') || app.includes('task-list'));
+check('app: brainstorm thread renders', app.includes('planner agent'));
+check('app: run inspector renders', app.includes('Target clouds') && app.includes('Idempotent result'));
+check('app: gate overlay present', app.includes('gate-overlay'));
 check('app: gate script calls /api/auth/me', app.includes('/api/auth/me'));
-check('app: login button targets next=/app', app.includes('/api/auth/login?next=/app'));
+check('app: gate has Google sign-in CTA', app.includes('href="/api/auth/login"') && app.includes('Sign in with Google'));
+check('app: provider glyphs inline', app.includes('aria-label="Azure"') && app.includes('aria-label="AWS"') && app.includes('aria-label="GCP"'));
+check('app: output formats offered', app.includes('Terraform') && app.includes('PowerShell') && app.includes('Ansible'));
 
 const authJs = read('js/auth.js');
 check('asset: auth.js uses /api/auth/me', authJs.includes('/api/auth/me'));

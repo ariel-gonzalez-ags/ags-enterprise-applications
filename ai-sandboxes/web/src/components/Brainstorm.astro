@@ -1,0 +1,79 @@
+---
+// Center stage: the brainstorm conversation with the planner agent,
+// plus a message composer. The selected run's summary header sits on top.
+import Icon from './Icon.astro';
+import { brainstorm } from '../content/console.js';
+---
+<div class="run-head">
+  <div>
+    <div class="run-eyebrow mono">ags_b3f58c · gcp · sandbox running</div>
+    <h1 class="run-title">Reproduce AKS OOMKill under load + fix</h1>
+  </div>
+  <div class="run-actions">
+    <button class="btn">Pause</button>
+    <button class="btn primary">Approve plan</button>
+  </div>
+</div>
+
+<div class="thread">
+  {brainstorm.map((m) => (
+    <div class={`msg ${m.role}`}>
+      {m.role === 'agent' && (
+        <div class="msg-agent-tag mono"><Icon name="bolt" size={13} /> {m.agent} agent</div>
+      )}
+      <div class="msg-body">{m.text}</div>
+    </div>
+  ))}
+</div>
+
+<div class="composer">
+  <div class="composer-box">
+    <textarea rows="2" placeholder="Describe the task, answer the planner, or attach context… (mock)"></textarea>
+    <button class="send" title="Send"><Icon name="send" size={16} /></button>
+  </div>
+  <div class="composer-hint mono">planner agent · sandbox-scoped credentials · nothing touches production</div>
+</div>
+
+<style>
+  .run-head {
+    display: flex; justify-content: space-between; align-items: center; gap: 16px;
+    padding: 22px 28px; border-bottom: 1px solid var(--line);
+  }
+  .run-eyebrow { font-size: 11.5px; color: var(--accent); margin-bottom: 6px }
+  .run-title { font-size: 20px; font-weight: 600; letter-spacing: -.02em }
+  .run-actions { display: flex; gap: 10px; flex-shrink: 0 }
+
+  .thread { flex: 1; padding: 26px 28px; display: flex; flex-direction: column; gap: 18px; overflow-y: auto }
+  .msg { max-width: 78% }
+  .msg.user { align-self: flex-end }
+  .msg.user .msg-body {
+    background: var(--accent); color: #160802; border-radius: 14px 14px 4px 14px;
+    padding: 12px 16px; font-size: 14px; line-height: 1.55;
+  }
+  .msg.agent { align-self: flex-start }
+  .msg-agent-tag { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--accent); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .05em }
+  .msg.agent .msg-body {
+    background: var(--panel2); border: 1px solid var(--line2);
+    border-radius: 14px 14px 14px 4px; padding: 14px 16px;
+    font-size: 14px; line-height: 1.6; color: var(--text); white-space: pre-line;
+  }
+
+  .composer { padding: 16px 28px 20px; border-top: 1px solid var(--line) }
+  .composer-box {
+    display: flex; gap: 10px; align-items: flex-end;
+    background: var(--panel2); border: 1px solid var(--line2); border-radius: 14px;
+    padding: 12px 12px 12px 16px;
+  }
+  .composer-box:focus-within { border-color: var(--accent) }
+  textarea {
+    flex: 1; background: transparent; border: none; resize: none; outline: none;
+    color: var(--text); font-family: 'Inter', sans-serif; font-size: 14px; line-height: 1.5;
+  }
+  textarea::placeholder { color: var(--muted2) }
+  .send {
+    display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px;
+    background: var(--accent); color: #160802; border: none; cursor: pointer; flex-shrink: 0;
+  }
+  .send:hover { background: #FF6B38 }
+  .composer-hint { margin-top: 10px; font-size: 10.5px; color: var(--muted2); text-align: center }
+</style>
