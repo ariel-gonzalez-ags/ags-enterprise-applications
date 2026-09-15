@@ -1,4 +1,4 @@
-name: build
+name: ci
 
 on:
   push:
@@ -7,20 +7,24 @@ on:
 jobs:
   web:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ai-sandboxes/web
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: web/package-lock.json
+          cache-dependency-path: ai-sandboxes/web/package-lock.json
       - run: npm ci --no-fund --no-audit
-        working-directory: web
       - run: npm run build && npm test
-        working-directory: web
 
   api:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ai-sandboxes
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -33,8 +37,26 @@ jobs:
   images:
     runs-on: ubuntu-latest
     needs: [web, api]
+    defaults:
+      run:
+        working-directory: ai-sandboxes
     steps:
       - uses: actions/checkout@v4
       # docker build runs the web smoke tests inside the image build;
       # a failure here means nothing shippable was produced.
       - run: docker compose build
+
+  dependency-review:
+    # Fails PRs that introduce dependencies with known vulnerabilities
+    # or forbidden licenses. Complements Dependabot (which updates
+    # existing deps; this gates new ones).
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high

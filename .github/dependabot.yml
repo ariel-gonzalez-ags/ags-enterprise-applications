@@ -1,0 +1,35 @@
+# Dependabot: keep npm + pip dependencies current, and watch the Docker
+# base images and GitHub Actions this repo pins.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /ai-sandboxes/web
+    target-branch: develop
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: pip
+    directory: /ai-sandboxes/api
+    target-branch: develop
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: docker
+    directory: /ai-sandboxes
+    target-branch: develop
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker
+    directory: /ai-sandboxes/api
+    target-branch: develop
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: weekly
