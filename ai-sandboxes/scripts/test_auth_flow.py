@@ -6,11 +6,9 @@ Usage: python3 scripts/test_auth_flow.py [base_url]
 Verifies: login redirect + state cookie → callback state enforcement →
 token exchange + userinfo (mocked) → session cookie → /me → logout.
 """
-import re
 import sys
-import urllib.request
-import http.cookiejar
 from unittest import mock
+from urllib.parse import urlparse, parse_qs
 
 BASE = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8090"
 
@@ -36,13 +34,13 @@ _real_post = httpx.AsyncClient.post
 _real_get = httpx.AsyncClient.get
 
 async def fake_post(self, url, data=None, **kw):
-    if not str(url).startswith("https://oauth2.googleapis.com"):
+    if urlparse(str(url)).hostname != "oauth2.googleapis.com":
         return await _real_post(self, url, data=data, **kw)
     assert data["code_verifier"], "PKCE verifier must be sent"
     return FakeResponse(200, {"access_token": "fake-token"})
 
 async def fake_get(self, url, headers=None, **kw):
-    if not str(url).startswith("https://openidconnect.googleapis.com"):
+    if urlparse(str(url)).hostname != "openidconnect.googleapis.com":
         return await _real_get(self, url, headers=headers, **kw)
     assert headers["Authorization"] == "Bearer fake-token"
     return FakeResponse(200, GOOGLE_USER)
@@ -66,11 +64,11 @@ with mock.patch("httpx.AsyncClient.post", fake_post), \
             r = await c.get("/api/auth/login?next=/app")
             assert r.status_code in (302, 307), f"login: {r.status_code}"
             loc = r.headers["location"]
-            assert "accounts.google.com" in loc and "code_challenge=" in loc, loc
+            loc_host = urlparse(loc).hostname
+            assert loc_host == "accounts.google.com" and "code_challenge=" in loc, loc
             state_cookie = r.cookies.get("ags_oauth_state")
             assert state_cookie, "state cookie missing"
             # State is inside the signed payload; extract via the URL state param.
-            from urllib.parse import urlparse, parse_qs
             state = parse_qs(urlparse(loc).query)["state"][0]
             print("ok    login redirects to Google with PKCE + state")
 

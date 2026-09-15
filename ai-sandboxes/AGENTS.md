@@ -28,8 +28,9 @@ crosses new architectural ground (database, background workers, websockets),
 
 ## Stack decisions (already made — don't revisit without a reason)
 
-- **Astro 5**, static output. Zero JavaScript ships to the browser beyond
-  `public/js/auth.js`.
+- **Astro 7**, static output. Zero JavaScript ships to the browser beyond
+  `public/js/auth.js`. Note: Astro 7 minifies inlined CSS (lowercase hex,
+  no spaces) — smoke tests must match tolerantly, not by exact bytes.
 - **No UI framework** (no React/Vue). Components are `.astro` files.
 - **No CSS framework** (no Tailwind). Hand-written CSS custom properties
   ("tokens") in `web/src/styles/`.
@@ -39,9 +40,9 @@ crosses new architectural ground (database, background workers, websockets),
   server-side session store yet); **Google OAuth** with PKCE (OIDC
   `openid email profile` scopes).
 - **Docker**: web = multi-stage (node → nginx-unprivileged), container ports
-  8080/8081; api = python:3.12-slim + uvicorn on 8000 (internal only).
+  8080/8081; api = python:3.14-slim + uvicorn on 8000 (internal only).
   Host port 8090. All base images pinned by digest.
-- **Node 22** for frontend builds; the web image contains no Node at runtime.
+- **Node 26** for frontend builds; the web image contains no Node at runtime.
 - **Secrets via env only**: `GOOGLE_CLIENT_ID/SECRET`, `SESSION_SECRET`,
   `BASE_URL`, `COOKIE_SECURE` — template in `.env.example`, real values in
   gitignored `.env.local`, injected by compose. Never in code or images.
@@ -60,7 +61,7 @@ crosses new architectural ground (database, background workers, websockets),
 │   ├── prod.sh           ← docker compose up --build (production-like)
 │   └── test_auth_flow.py ← e2e auth test with Google mocked (run in venv)
 ├── api/
-│   ├── Dockerfile        ← python:3.12-slim + uvicorn, non-root
+│   ├── Dockerfile        ← python:3.14-slim + uvicorn, non-root
 │   ├── requirements.txt  ← pinned majors (fastapi, uvicorn, httpx, itsdangerous)
 │   └── app/
 │       ├── main.py       ← create_app: CORS, /api/healthz, router mount
@@ -164,7 +165,7 @@ that. Marketing pages stay prerendered (static) regardless.
 ## Workflow
 
 ```bash
-# Develop frontend with hot reload (Node 22 on host):
+# Develop frontend with hot reload (Node 22+ on host):
 ./scripts/dev.sh            # → http://localhost:4321
 
 # Full stack (what CI/CD runs):
@@ -225,7 +226,7 @@ with sync_playwright() as p:
 
 ## Conventions
 
-- Language: plain HTML/CSS/JS in Astro components; Python 3.12 in `api/`.
+- Language: plain HTML/CSS/JS in Astro components; Python 3.14 in `api/`.
   No TypeScript, no JSX.
 - Indentation: 2 spaces (web), 4 spaces (python).
 - Fonts: Inter (UI) + JetBrains Mono (code/eyebrows), loaded from Google Fonts

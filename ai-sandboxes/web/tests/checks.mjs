@@ -38,7 +38,9 @@ check('home: features section', home.includes('id="features"') && home.includes(
 check('home: stats section', home.includes('median request') && home.includes('4,320'));
 check('home: CTA section', home.includes('id="cta"') && home.includes('Ship the work'));
 check('home: footer note', home.includes('concept mockup'));
-check('home: design tokens inlined', home.includes('--accent:#F05623') || home.includes('--accent: #F05623'));
+// Astro may minify/lowercase inlined CSS differently across versions —
+// match tokens tolerantly rather than asserting an exact byte sequence.
+check('home: design tokens inlined', /--accent\s*:\s*#f05623/i.test(home));
 check('home: favicon points to /assets/logo.svg', home.includes('/assets/logo.svg'));
 check('home: no leftover template artifacts', !home.includes('Astro.props') && !home.includes('{hero.'));
 
@@ -58,7 +60,7 @@ check('asset: auth.js is an IIFE', authJs.includes('(function () {'));
 
 // ---- static assets ----
 const logo = read('assets/logo.svg');
-check('asset: logo.svg has ember ring', logo.includes('#F05623'));
+check('asset: logo.svg has ember ring', /#f05623/i.test(logo));
 check('asset: logo.svg has counter A', logo.includes('M50 43 L53.8 54'));
 read('assets/logo-lockup.svg');
 pass('asset: logo-lockup.svg exists');
