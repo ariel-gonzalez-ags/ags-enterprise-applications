@@ -1,0 +1,84 @@
+---
+import Icon from './Icon.astro';
+import SectionHead from './SectionHead.astro';
+import { demo } from '../content/home.js';
+---
+<section id="demo" style="padding-top:0">
+  <div class="wrap">
+    <SectionHead eyebrow={demo.eyebrow} title={demo.title} desc={demo.desc} />
+    <div class="demo">
+      <div class="demo-bar">
+        <span class="d r"></span><span class="d y"></span><span class="d g"></span>
+        <span class="path">{demo.path}</span>
+      </div>
+      <div class="demo-body">
+        <div class="demo-col">
+          <h4>{demo.inputTitle}</h4>
+          {demo.inputs.map((i) => (
+            <div class="ref-card">
+              <Icon name={i.icon} size={20} />
+              <div>
+                <div class="rc-title">{i.title}</div>
+                <div class="rc-meta">{i.meta}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div class="demo-col">
+          <h4>{demo.outputTitle}</h4>
+          {demo.checks.map((c) => (
+            <div class="check-line">
+              <Icon name="check" size={16} />
+              <div>{c.text} <span class="code">{c.code}</span></div>
+            </div>
+          ))}
+          <div class="demo-verdict">
+            <Icon name="badge-check" size={18} />
+            {demo.verdict}
+            <span class="mono">{demo.verdictMeta}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .demo { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden }
+  .demo-bar {
+    display: flex; align-items: center; gap: 8px; padding: 14px 18px;
+    border-bottom: 1px solid var(--line); background: var(--panel2);
+  }
+  .demo-bar .d { width: 11px; height: 11px; border-radius: 50%; background: var(--line2) }
+  .demo-bar .d.g { background: var(--accent) }
+  .demo-bar .d.y { background: var(--warn) }
+  .demo-bar .d.r { background: var(--red) }
+  .demo-bar .path { margin-left: 10px; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; color: var(--muted2) }
+  .demo-body { display: grid; grid-template-columns: 1fr 1fr }
+  .demo-col { padding: 26px; border-right: 1px solid var(--line) }
+  .demo-col:last-child { border-right: none }
+  .demo-col h4 {
+    font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--muted2); margin-bottom: 16px; font-family: 'JetBrains Mono', monospace;
+  }
+  .ref-card {
+    display: flex; gap: 12px; padding: 14px; border: 1px solid var(--line2); border-radius: 10px;
+    margin-bottom: 12px; background: var(--panel2); align-items: flex-start; color: var(--muted);
+  }
+  .ref-card svg { flex-shrink: 0; margin-top: 2px }
+  .rc-title { font-size: 13.5px; font-weight: 500; margin-bottom: 3px; color: var(--text) }
+  .rc-meta { font-size: 12px; color: var(--muted2); font-family: 'JetBrains Mono', monospace }
+  .check-line { display: flex; gap: 10px; align-items: flex-start; font-size: 13.5px; padding: 8px 0; color: var(--muted) }
+  .check-line svg { color: var(--accent); flex-shrink: 0; margin-top: 2px }
+  .check-line .code { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--muted2) }
+  .demo-verdict {
+    margin-top: 18px; padding: 14px 16px; border-radius: 10px; background: var(--accent-dim);
+    display: flex; align-items: center; gap: 10px; font-size: 13.5px; color: var(--accent);
+  }
+  .demo-verdict .mono { margin-left: auto; font-size: 12px }
+  @media (max-width: 900px) {
+    .demo-body { grid-template-columns: 1fr }
+    .demo-col { border-right: none; border-bottom: 1px solid var(--line) }
+    .demo-col:last-child { border-bottom: none }
+  }
+</style>

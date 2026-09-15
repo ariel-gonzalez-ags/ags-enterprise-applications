@@ -1,0 +1,32 @@
+---
+// Base HTML shell: fonts, favicon, global tokens + primitives.
+// Every page wraps itself in this layout.
+import Tokens from '../styles/tokens.css.astro';
+import Base from '../styles/base.css.astro';
+
+interface Props {
+  title: string;
+  description?: string;
+  auth?: boolean;   // include /js/auth.js (nav sign-in state)
+}
+const { title, description = 'AI-executed cloud work, sandbox-tested and delivered with proof.', auth = false } = Astro.props;
+---
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content={description} />
+  <title>{title}</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/logo.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <Tokens />
+  <Base />
+  {auth && <script src="/js/auth.js" defer></script>}
+</head>
+<body>
+  <slot />
+</body>
+</html>

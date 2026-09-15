@@ -1,0 +1,35 @@
+---
+import Icon from './Icon.astro';
+import SectionHead from './SectionHead.astro';
+import { workloads } from '../content/home.js';
+---
+<section id="workloads">
+  <div class="wrap">
+    <SectionHead eyebrow={workloads.eyebrow} title={workloads.title} desc={workloads.desc} />
+    <div class="workloads">
+      {workloads.items.map((w) => (
+        <div class="wl">
+          <div class="wl-icon"><Icon name={w.icon} size={18} /></div>
+          <h3>{w.title}</h3>
+          <p>{w.desc}</p>
+          <div class="wl-eg"><span>→</span> {w.eg}</div>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  .workloads { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px }
+  .wl { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 26px; transition: .25s }
+  .wl:hover { border-color: var(--line2); transform: translateY(-2px) }
+  .wl-icon { width: 38px; height: 38px; border-radius: 9px; background: var(--accent-dim); display: grid; place-items: center; margin-bottom: 16px; color: var(--accent) }
+  .wl h3 { font-size: 15.5px; font-weight: 600; margin-bottom: 7px }
+  .wl p { font-size: 13.5px; color: var(--muted); line-height: 1.55 }
+  .wl-eg {
+    margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line2);
+    font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--muted2); line-height: 1.6;
+  }
+  .wl-eg span { color: var(--accent) }
+  @media (max-width: 900px) { .workloads { grid-template-columns: 1fr } }
+</style>

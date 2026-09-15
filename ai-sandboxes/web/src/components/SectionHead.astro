@@ -1,0 +1,14 @@
+---
+// Standard section header: mono eyebrow, big title, muted description.
+interface Props {
+  eyebrow: string;
+  title: string;
+  desc?: string;
+}
+const { eyebrow, title, desc } = Astro.props;
+---
+<div class="sec-head">
+  <div class="sec-eyebrow">{eyebrow}</div>
+  <h2 class="sec-title">{title}</h2>
+  {desc && <p class="sec-desc">{desc}</p>}
+</div>

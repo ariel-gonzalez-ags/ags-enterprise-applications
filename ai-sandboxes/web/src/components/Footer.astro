@@ -1,0 +1,18 @@
+---
+import { footer } from '../content/home.js';
+---
+<footer>
+  <div class="wrap foot-in">
+    <span>{footer.note}</span>
+    <div class="foot-links">
+      {footer.links.map((l) => <a href={l.href}>{l.label}</a>)}
+    </div>
+  </div>
+</footer>
+
+<style>
+  footer { border-top: 1px solid var(--line); padding: 48px 0 36px; color: var(--muted2); font-size: 13px }
+  .foot-in { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px }
+  .foot-links { display: flex; gap: 24px }
+  .foot-links a:hover { color: var(--text) }
+</style>

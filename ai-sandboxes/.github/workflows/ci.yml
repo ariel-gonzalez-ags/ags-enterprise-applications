@@ -1,0 +1,40 @@
+name: build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci --no-fund --no-audit
+        working-directory: web
+      - run: npm run build && npm test
+        working-directory: web
+
+  api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r api/requirements.txt
+      - name: Auth flow e2e (Google mocked)
+        run: python scripts/test_auth_flow.py
+
+  images:
+    runs-on: ubuntu-latest
+    needs: [web, api]
+    steps:
+      - uses: actions/checkout@v4
+      # docker build runs the web smoke tests inside the image build;
+      # a failure here means nothing shippable was produced.
+      - run: docker compose build

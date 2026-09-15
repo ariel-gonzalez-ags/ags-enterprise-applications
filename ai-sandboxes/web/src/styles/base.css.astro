@@ -1,0 +1,35 @@
+---
+// Generic primitives shared across pages. Import where needed.
+---
+<style is:global>
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 0 32px }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 9px 18px; border-radius: 10px; font-size: 14px; font-weight: 500;
+    border: 1px solid var(--line2); background: var(--panel); color: var(--text);
+    cursor: pointer; transition: .2s;
+  }
+  .btn:hover { border-color: #57301A; background: var(--panel2) }
+  .btn.primary {
+    background: var(--accent); color: #160802; border-color: transparent; font-weight: 600;
+  }
+  .btn.primary:hover { background: #FF6B38 }
+  .btn.ghost { background: transparent; border-color: transparent; color: var(--muted) }
+  .btn.ghost:hover { color: var(--text) }
+  .btn.lg { padding: 13px 26px; font-size: 15px; border-radius: 12px }
+
+  /* Standard section scaffolding */
+  section { padding: 96px 0 }
+  .sec-head { max-width: 680px; margin-bottom: 56px }
+  .sec-eyebrow {
+    font-size: 13px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--accent); margin-bottom: 14px; font-family: 'JetBrains Mono', monospace;
+  }
+  .sec-title { font-size: clamp(28px, 4vw, 42px); font-weight: 600; letter-spacing: -.025em; line-height: 1.15; margin-bottom: 16px }
+  .sec-desc { color: var(--muted); font-size: 17px }
+
+  @media (max-width: 900px) {
+    .nav-links { display: none }
+  }
+</style>

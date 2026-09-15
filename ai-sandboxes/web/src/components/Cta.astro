@@ -1,0 +1,26 @@
+---
+import Icon from './Icon.astro';
+import { cta } from '../content/home.js';
+---
+<section class="cta" id="cta">
+  <div class="glow"></div>
+  <div class="wrap">
+    <h2>{cta.title}</h2>
+    <p>{cta.sub}</p>
+    <a href="#" class="btn primary lg">
+      {cta.button}
+      <Icon name="arrow" size={16} />
+    </a>
+  </div>
+</section>
+
+<style>
+  .cta { text-align: center; padding: 110px 0; border-top: 1px solid var(--line); position: relative; overflow: hidden }
+  h2 { font-size: clamp(30px, 4.5vw, 48px); font-weight: 600; letter-spacing: -.03em; margin-bottom: 18px }
+  p { color: var(--muted); margin-bottom: 34px; font-size: 17px }
+  .glow {
+    position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+    width: 600px; height: 280px; pointer-events: none;
+    background: radial-gradient(ellipse at top, var(--accent-dim), transparent 65%);
+  }
+</style>

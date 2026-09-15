@@ -1,0 +1,5 @@
+# Build context for the api image (api/ directory).
+__pycache__
+*.pyc
+.env
+.env.local

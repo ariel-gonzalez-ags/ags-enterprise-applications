@@ -1,0 +1,35 @@
+---
+// P6 "deep magma" design tokens. Import once in Base.astro; never hardcode
+// these values elsewhere — always reference var(--token-name).
+---
+<style is:global>
+  :root {
+    --bg: #060504;
+    --panel: #0C0A08;
+    --panel2: #12100D;
+    --line: #1E1812;
+    --line2: #2B2118;
+    --text: #F2EDE8;
+    --muted: #98897E;
+    --muted2: #655950;
+    --accent: #F05623;          /* magma ember */
+    --accent-dim: rgba(240, 86, 35, .12);
+    --warn: #FFB184;
+    --red: #E5484D;
+    --deep-red: #A82405;        /* secondary, brand only */
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0 }
+  html { scroll-behavior: smooth }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-size: 16px; line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+  ::selection { background: var(--accent); color: #160802 }
+  .mono { font-family: 'JetBrains Mono', monospace }
+  a { color: inherit; text-decoration: none }
+</style>

@@ -1,0 +1,37 @@
+---
+import Logo from './Logo.astro';
+import { nav, brand } from '../content/home.js';
+---
+<nav>
+  <div class="wrap nav-in">
+    <a href="/" class="brand">
+      <Logo size={48} />
+      {brand.name}
+    </a>
+    <div class="nav-links">
+      {nav.map((l) => <a href={l.href}>{l.label}</a>)}
+      <a href="/app" data-auth="protected-link" style="display:none">Console</a>
+    </div>
+    <div class="nav-cta">
+      <span data-auth="user" class="nav-user-slot"></span>
+      <a href="/api/auth/login" class="btn ghost" data-auth="signin">Sign in</a>
+      <a href="#cta" class="btn primary">Get started</a>
+    </div>
+  </div>
+</nav>
+
+<style>
+  nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 50;
+    background: rgba(6, 5, 4, .72); backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--line);
+  }
+  .nav-in { display: flex; align-items: center; justify-content: space-between; height: 80px }
+  .brand { display: flex; align-items: center; gap: 14px; font-weight: 600; font-size: 20px; letter-spacing: -.02em }
+  .nav-links { display: flex; gap: 28px; font-size: 14px; color: var(--muted) }
+  .nav-links a:hover { color: var(--text) }
+  .nav-cta { display: flex; gap: 12px; align-items: center }
+  .nav-user-slot { display: inline-flex; align-items: center; gap: 10px }
+  .nav-user-slot :global(.nav-avatar) { width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--line2) }
+  .nav-user-slot :global(.nav-user) { font-size: 13.5px; color: var(--muted); max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+</style>

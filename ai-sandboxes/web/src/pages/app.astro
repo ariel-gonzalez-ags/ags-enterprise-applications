@@ -1,0 +1,54 @@
+---
+// /app — the future product console. Placeholder gated by session:
+// auth.js redirects to /api/auth/login when /api/auth/me returns 401.
+import Base from '../layouts/Base.astro';
+import Nav from '../components/Nav.astro';
+---
+<Base title="Agisphire — Console" auth>
+  <Nav />
+  <main class="wrap gate">
+    <div class="card">
+      <div class="eyebrow">// console</div>
+      <h1>Your sandbox console</h1>
+      <p class="sub" id="gate-msg">Checking your session…</p>
+      <a href="/api/auth/login?next=/app" class="btn primary lg" id="gate-login" style="display:none">
+        Sign in with Google
+      </a>
+    </div>
+  </main>
+</Base>
+
+<style>
+  .gate { min-height: 100vh; display: grid; place-items: center; padding-top: 80px }
+  .card {
+    max-width: 560px; text-align: center; padding: 56px 48px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  }
+  .eyebrow {
+    font-size: 13px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--accent); margin-bottom: 14px; font-family: 'JetBrains Mono', monospace;
+  }
+  h1 { font-size: 32px; font-weight: 600; letter-spacing: -.025em; margin-bottom: 14px }
+  .sub { color: var(--muted); margin-bottom: 28px }
+</style>
+
+<script>
+  // Gate: only runs on /app. If signed in, swap the placeholder copy.
+  fetch('/api/auth/me', { credentials: 'same-origin' })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (data) {
+      var msg = document.getElementById('gate-msg');
+      var login = document.getElementById('gate-login');
+      if (data && data.user) {
+        msg.textContent = 'Welcome, ' + (data.user.name || data.user.email) +
+          '. Task submission and live sandbox status land here next.';
+      } else {
+        msg.textContent = 'This area requires an account.';
+        login.style.display = 'inline-flex';
+      }
+    })
+    .catch(function () {
+      document.getElementById('gate-msg').textContent =
+        'Could not reach the auth service. Is the API container running?';
+    });
+</script>

@@ -1,0 +1,16 @@
+{
+  "name": "agisphire-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Agisphire marketing site — static Astro build, containerized with nginx.",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "test": "node tests/checks.mjs"
+  },
+  "dependencies": {
+    "astro": "^5.18.2"
+  }
+}

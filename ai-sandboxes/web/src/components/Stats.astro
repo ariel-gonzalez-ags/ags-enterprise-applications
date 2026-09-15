@@ -1,0 +1,24 @@
+---
+import { stats } from '../content/home.js';
+---
+<section id="stats" style="padding-top:0">
+  <div class="wrap">
+    <div class="stats">
+      {stats.map((s) => (
+        <div class="stat">
+          <div class="n">{s.n}<span>{s.unit}</span></div>
+          <div class="l">{s.label}</div>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden }
+  .stat { background: var(--panel); padding: 34px 26px; text-align: center }
+  .n { font-size: 34px; font-weight: 600; letter-spacing: -.03em; margin-bottom: 6px }
+  .n span { color: var(--accent) }
+  .l { font-size: 13px; color: var(--muted) }
+  @media (max-width: 900px) { .stats { grid-template-columns: repeat(2, 1fr) } }
+</style>

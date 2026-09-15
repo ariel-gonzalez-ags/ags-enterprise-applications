@@ -1,0 +1,25 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: agisphire-web:latest
+    ports:
+      - "8090:8080"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    image: agisphire-api:latest
+    env_file:
+      # Optional in dev; auth endpoints return 503 until real values are set.
+      - path: .env.local
+        required: false
+    environment:
+      BASE_URL: ${BASE_URL:-http://localhost:8090}
+      COOKIE_SECURE: ${COOKIE_SECURE:-0}
+    restart: unless-stopped

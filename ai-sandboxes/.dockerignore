@@ -1,0 +1,14 @@
+# Keep the Docker build context small and reproducible.
+node_modules
+web/node_modules
+web/dist
+*.png
+.git
+.gitignore
+AGENTS.md
+README.md
+scripts
+.env
+.env.local
+api
+secrets/
