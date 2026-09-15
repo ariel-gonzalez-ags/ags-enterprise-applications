@@ -31,6 +31,8 @@ crosses new architectural ground (database, background workers, websockets),
 - **Astro 7**, static output. Zero JavaScript ships to the browser beyond
   `public/js/auth.js`. Note: Astro 7 minifies inlined CSS (lowercase hex,
   no spaces) — smoke tests must match tolerantly, not by exact bytes.
+  Astro 7 also **drops elements with `style="display:none"`** at build
+  time — use the `hidden` attribute instead (gate overlay in ConsoleShell).
 - **No UI framework** (no React/Vue). Components are `.astro` files.
 - **No CSS framework** (no Tailwind). Hand-written CSS custom properties
   ("tokens") in `web/src/styles/`.
