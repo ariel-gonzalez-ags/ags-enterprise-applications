@@ -5,6 +5,7 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+  workflow_dispatch:
   schedule:
     # Weekly re-scan: catches newly disclosed patterns in unchanged code.
     - cron: '22 4 * * 1'
