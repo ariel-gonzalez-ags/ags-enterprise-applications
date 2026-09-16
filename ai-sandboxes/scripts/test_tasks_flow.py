@@ -125,6 +125,16 @@ async def main():
         assert "ansible" in kinds and "markdown" in kinds, kinds
         print(f"ok    simulated run verified: {t['checks']['total']}/{t['checks']['total']} checks, {len(t['artifacts'])} artifacts")
 
+        # 5b. artifacts are fetchable, owner-scoped, attachment-marked
+        art = next(a for a in t["artifacts"] if a["id"] == "harden.yml")
+        r = await c.get(art["url"])
+        assert r.status_code == 200, r.status_code
+        assert "attachment" in r.headers.get("content-disposition", "")
+        assert tid in r.text  # simulated content embeds the task id
+        r = await c.get(f"/api/tasks/{tid}/artifacts/nope.txt")
+        assert r.status_code == 404
+        print("ok    artifact download: 200 + attachment + content; unknown 404")
+
         # 6. chat closed after planning+run
         r = await c.post(f"/api/tasks/{tid}/messages", json={"text": "more?"})
         assert r.status_code == 409, r.status_code

@@ -3,12 +3,13 @@ gated by the signed session cookie and scoped to the owning user."""
 import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from .. import db, planner, runner
 from ..config import Settings
-from ..models import Message, Task
+from ..models import Artifact, Message, Task
 from ..session import get_session
 
 router = APIRouter()
@@ -47,7 +48,8 @@ def _task_json(t: Task, detail: bool = False) -> dict:
             for m in t.messages
         ]
         out["artifacts"] = [
-            {"id": a.filename, "kind": a.kind, "size": a.size, "note": a.note}
+            {"id": a.filename, "kind": a.kind, "size": a.size, "note": a.note,
+             "url": f"/api/tasks/{t.id}/artifacts/{a.filename}"}
             for a in t.artifacts
         ]
     return out
@@ -94,6 +96,27 @@ async def get_task(task_id: str, user: dict = Depends(_user)):
         if t is None or t.owner_sub != user["sub"]:
             raise HTTPException(404, "task not found")
         return _task_json(t, detail=True)
+
+
+@router.get("/tasks/{task_id}/artifacts/{filename}")
+async def download_artifact(task_id: str, filename: str, user: dict = Depends(_user)):
+    """Artifact contents, owner-scoped. `download=1` forces a file download;
+    plain GET returns text the in-app viewer renders."""
+    async with db.session() as s:
+        t = await s.get(Task, task_id)
+        if t is None or t.owner_sub != user["sub"]:
+            raise HTTPException(404, "task not found")
+        result = await s.execute(
+            select(Artifact).where(Artifact.task_id == task_id,
+                                   Artifact.filename == filename))
+        a = result.scalar_one_or_none()
+        if a is None:
+            raise HTTPException(404, "artifact not found")
+        headers = {
+            "Content-Disposition": f'attachment; filename="{a.filename}"',
+            "Cache-Control": "private, no-store",
+        }
+        return PlainTextResponse(a.content, headers=headers)
 
 
 @router.delete("/tasks/{task_id}", status_code=204)

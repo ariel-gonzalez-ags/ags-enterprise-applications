@@ -22,6 +22,31 @@ _FORMAT_FILES = {
 _ALWAYS = [("verify.sh", "bash", "0.9 KB", "rerun the acceptance checks anywhere")]
 
 
+def _content(filename: str, task: Task, note: str, total: int) -> str:
+    """Plausible simulated content, clearly marked. Real executors replace
+    this with actual outputs; the storage and delivery path stay."""
+    return f"""# {filename}
+# Deliverable for: {task.title}
+# Task: {task.id} ({task.provider}) | checks: {total}/{total} green
+# Note: {note}
+#
+# SIMULATED CONTENT. The sandbox executor is not wired yet; this file
+# exercises the storage and delivery path that real outputs will use.
+# Structure mirrors the real deliverable: idempotent, rerunnable, evidence-first.
+
+# --- plan ---
+# formats requested: {", ".join(task.formats) or "runbook"}
+# idempotent result: {"yes" if task.idempotent else "no"}
+# destroy sandbox after handover: {"yes" if task.destroy_after else "no"}
+# max sandbox hours: {task.max_hours}
+
+# --- evidence (simulated) ---
+# check 1..{total}: PASS
+# drift after re-apply: none
+# sandbox teardown: complete; evidence retained under this task
+"""
+
+
 async def _say(s, task_id: str, text: str) -> None:
     s.add(Message(task_id=task_id, role="agent", text=text))
 
@@ -64,7 +89,8 @@ async def run_task(task_id: str) -> None:
                 continue
             seen.add(filename)
             s.add(Artifact(task_id=task_id, filename=filename, kind=kind,
-                           size=size, note=note, content=f"# simulated {filename}\n"))
+                           size=size, note=note,
+                           content=_content(filename, task, note, total)))
         task.state = "verified"
         await _say(s, task_id,
                    f"All {total} checks green. {len(seen)} artifacts delivered; "

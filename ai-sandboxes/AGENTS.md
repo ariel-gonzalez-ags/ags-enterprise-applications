@@ -214,6 +214,7 @@ that. Marketing pages stay prerendered (static) regardless.
 | `PATCH /api/tasks/{id}` `{formats}` | user edits the accepted deliverable set (drafting/planned only); slugs, dedupes, min 1 |
 | `DELETE /api/tasks/{id}` | 204; drafting/planned only. running/verified/delivered are records: 409 |
 | `POST /api/tasks/{id}/approve` | `planned` → `running`, spawns the simulated run |
+| `GET /api/tasks/{id}/artifacts/{filename}` | artifact contents, owner-scoped; `Content-Disposition: attachment`, `no-store` |
 
 **Chat and runs are asynchronous by design.** The POST never waits on the
 LLM; it sets `agent_pending` and returns. Clients poll `GET /tasks/{id}`:
@@ -226,7 +227,9 @@ All gated by the session cookie, scoped to `owner_sub` (404 across owners,
 not 403, don't leak existence). Task JSON shape: `{id (GUID), title, state,
 provider, formats[], idempotent, checks{passed,total}, updated}`; detail adds
 `config{destroyAfter,maxHours}`, `messages[{role,text,plan,at}]`,
-`artifacts[{id,kind,size,note}]`. Planner messages carry
+`artifacts[{id,kind,size,note,url}]`. The `url` is the download endpoint; the
+console renders artifact cards as buttons that open an in-app viewer (modal
+in RunInspector.astro, fetched as text) with a download link. Planner messages carry
 `plan = {summary, clouds[], deliverables[{id,why}], est_hours} | null`.
 
 Operational gotchas:

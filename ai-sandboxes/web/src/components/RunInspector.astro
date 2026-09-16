@@ -59,6 +59,23 @@ import { providers } from '../content/console.js';
   </section>
 </div>
 
+<div class="art-viewer" data-console="artifact-viewer" hidden>
+  <div class="art-modal">
+    <div class="art-modal-head">
+      <span class="mono" data-console="artifact-name"></span>
+      <span class="art-modal-actions">
+        <a class="art-dl" data-console="artifact-download" href="#" download>
+          <Icon name="download" size={13} /> download
+        </a>
+        <button class="art-close" data-console="artifact-close" type="button" aria-label="Close">
+          <Icon name="x" size={14} />
+        </button>
+      </span>
+    </div>
+    <pre class="art-body mono" data-console="artifact-body"></pre>
+  </div>
+</div>
+
 <style>
   .insp { padding: 22px 18px; display: flex; flex-direction: column; gap: 28px }
   .insp section { padding: 0 } /* cancel the marketing base.css section scaffold */
@@ -99,9 +116,41 @@ import { providers } from '../content/console.js';
 
   .art-list { display: flex; flex-direction: column; gap: 8px }
   /* Artifact cards render at runtime via console.js: global under .art-list */
-  .art-list :global(.art) { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px }
+  .art-list :global(.art) { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; text-align: left; width: 100%; font: inherit; color: inherit; cursor: pointer; transition: .15s }
+  .art-list :global(.art:hover) { border-color: var(--accent) }
   .art-list :global(.art-top) { display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px }
   .art-list :global(.art-name) { font-size: 12px; color: var(--text) }
   .art-list :global(.art-size) { font-size: 10.5px; color: var(--muted2) }
   .art-list :global(.art-note) { font-size: 11.5px; color: var(--muted2) }
+
+  .art-viewer {
+    position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 60;
+    display: grid; place-items: center; padding: 24px;
+  }
+  .art-viewer[hidden] { display: none }
+  .art-modal {
+    background: var(--panel); border: 1px solid var(--line2); border-radius: 14px;
+    width: min(760px, 100%); max-height: 80vh; display: flex; flex-direction: column; overflow: hidden;
+  }
+  .art-modal-head {
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    padding: 14px 16px; border-bottom: 1px solid var(--line);
+  }
+  .art-modal-head .mono { font-size: 13px; color: var(--text) }
+  .art-modal-actions { display: inline-flex; align-items: center; gap: 10px }
+  .art-dl {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500;
+    color: var(--accent); text-decoration: none; padding: 5px 10px; border: 1px solid var(--line2);
+    border-radius: 8px; transition: .15s;
+  }
+  .art-dl:hover { border-color: var(--accent) }
+  .art-close {
+    display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px;
+    background: transparent; border: 1px solid var(--line2); color: var(--muted); cursor: pointer; transition: .15s;
+  }
+  .art-close:hover { color: var(--text); border-color: var(--line2); background: var(--raised) }
+  .art-body {
+    margin: 0; padding: 16px; overflow: auto; font-size: 12px; line-height: 1.6;
+    color: var(--muted); white-space: pre-wrap; word-break: break-word;
+  }
 </style>

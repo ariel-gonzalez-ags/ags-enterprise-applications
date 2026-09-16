@@ -259,12 +259,41 @@
       artList.innerHTML = '<p class="hint">No artifacts yet. They appear when a run verifies.</p>';
     } else {
       artList.innerHTML = arts.map(function (a) {
-        return '<div class="art"><div class="art-top"><span class="art-name mono">' + esc(a.id) +
+        return '<button class="art" data-art-url="' + esc(a.url) + '" data-art-name="' + esc(a.id) + '" type="button">' +
+          '<div class="art-top"><span class="art-name mono">' + esc(a.id) +
           '</span><span class="art-size mono">' + esc(a.size) + '</span></div>' +
-          '<div class="art-note">' + esc(a.note) + '</div></div>';
+          '<div class="art-note">' + esc(a.note) + '</div></button>';
       }).join('');
     }
   }
+
+  /* ---------- artifact viewer ---------- */
+
+  var viewer = document.querySelector('[data-console="artifact-viewer"]');
+  var viewerName = document.querySelector('[data-console="artifact-name"]');
+  var viewerBody = document.querySelector('[data-console="artifact-body"]');
+  var viewerDl = document.querySelector('[data-console="artifact-download"]');
+
+  artList.addEventListener('click', function (e) {
+    var card = e.target.closest('[data-art-url]');
+    if (!card) return;
+    var url = card.getAttribute('data-art-url');
+    viewerName.textContent = card.getAttribute('data-art-name');
+    viewerBody.textContent = 'loading…';
+    viewerDl.href = url;
+    viewer.hidden = false;
+    fetch(url, { credentials: 'same-origin' })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+      .then(function (text) { viewerBody.textContent = text; })
+      .catch(function () { viewerBody.textContent = 'could not load artifact.'; });
+  });
+
+  document.querySelector('[data-console="artifact-close"]').addEventListener('click', function () {
+    viewer.hidden = true;
+  });
+  viewer.addEventListener('click', function (e) {
+    if (e.target === viewer) viewer.hidden = true;  // click backdrop to close
+  });
 
   /* ---------- header / actions ---------- */
 
