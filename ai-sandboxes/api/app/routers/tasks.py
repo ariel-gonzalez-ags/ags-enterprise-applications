@@ -32,6 +32,7 @@ def _task_json(t: Task, detail: bool = False) -> dict:
         "title": t.title,
         "state": t.state,
         "provider": t.provider,
+        "model": t.model,
         "formats": t.formats,
         "idempotent": t.idempotent,
         "checks": {"passed": t.checks_passed, "total": t.checks_total},
@@ -82,6 +83,14 @@ _PROVIDERS = {"azure", "aws", "gcp"}
 class CreateTask(BaseModel):
     title: str = Field(default="Untitled task", max_length=200)
     provider: str = Field(default="azure", max_length=16)
+    model: str | None = Field(default=None, max_length=40)
+
+
+@router.get("/models")
+async def list_models(user: dict = Depends(_user)):
+    """Planner models the user can pick from. Data-driven; the source of
+    truth is planner.MODELS."""
+    return {"models": planner.MODELS}
 
 
 @router.post("/tasks", status_code=201)
@@ -89,9 +98,12 @@ async def create_task(body: CreateTask, user: dict = Depends(_user)):
     provider = body.provider.strip().lower()
     if provider not in _PROVIDERS:
         raise HTTPException(422, f"provider must be one of {sorted(_PROVIDERS)}")
+    model = (body.model or "").strip()
+    if model and model not in planner.MODEL_IDS:
+        raise HTTPException(422, f"model must be one of {sorted(planner.MODEL_IDS)}")
     async with db.session() as s:
         t = Task(owner_sub=user["sub"], title=body.title.strip() or "Untitled task",
-                 provider=provider)
+                 provider=provider, model=model or "gemini-3.6-flash")
         s.add(t)
         await s.commit()
         return _task_json(t)
@@ -145,6 +157,7 @@ async def delete_task(task_id: str, user: dict = Depends(_user)):
 class PatchTask(BaseModel):
     formats: list[str] | None = Field(default=None)
     provider: str | None = Field(default=None, max_length=16)
+    model: str | None = Field(default=None, max_length=40)
 
 
 def _slug(raw: str) -> str:
@@ -179,6 +192,11 @@ async def patch_task(task_id: str, body: PatchTask, user: dict = Depends(_user))
             if provider not in _PROVIDERS:
                 raise HTTPException(422, f"provider must be one of {sorted(_PROVIDERS)}")
             t.provider = provider
+        if body.model is not None:
+            model = body.model.strip()
+            if model not in planner.MODEL_IDS:
+                raise HTTPException(422, f"model must be one of {sorted(planner.MODEL_IDS)}")
+            t.model = model
         await s.commit()
         return _task_json(t, detail=True)
 
@@ -224,6 +242,7 @@ async def _plan_in_background(task_id: str, settings: Settings) -> None:
         if t is None:
             return
         history = [{"role": m.role, "text": m.text} for m in t.messages]
+        model = t.model
         state = {
             "provider": t.provider,
             "formats": list(t.formats or []),
@@ -233,7 +252,7 @@ async def _plan_in_background(task_id: str, settings: Settings) -> None:
         }
 
     try:
-        out = await planner.reply(settings, history, state)
+        out = await planner.reply(settings, history, state, model)
         reply_text, title, plan = out["reply"], out["title"], out["plan"]
     except planner.PlannerUnavailable:
         reply_text, title, plan = (

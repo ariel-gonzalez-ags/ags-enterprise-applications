@@ -205,6 +205,24 @@ async def main():
         assert r.status_code == 422
         print("ok    provider: set at create, patched, invalid rejected (422)")
 
+        # 6g. model: selectable at create, patchable while shapeable, validated
+        r = await c.get("/api/models")
+        ids = {m["id"] for m in r.json()["models"]}
+        assert "gemini-3.6-flash" in ids and len(ids) >= 2, ids
+        r = await c.post("/api/tasks", json={"title": "mdl", "model": "gemini-3.1-flash-lite"})
+        assert r.json()["model"] == "gemini-3.1-flash-lite", r.json()
+        tidm = r.json()["id"]
+        r = await c.patch(f"/api/tasks/{tidm}", json={"model": "gemini-3.5-flash"})
+        assert r.json()["model"] == "gemini-3.5-flash"
+        r = await c.patch(f"/api/tasks/{tidm}", json={"model": "gpt-4"})
+        assert r.status_code == 422, r.status_code
+        r = await c.post("/api/tasks", json={"title": "bad", "model": "gpt-4"})
+        assert r.status_code == 422
+        # default when unspecified
+        r = await c.post("/api/tasks", json={"title": "dflt"})
+        assert r.json()["model"] == "gemini-3.6-flash", r.json()
+        print("ok    model: listed, set at create, patched, invalid rejected (422), default applied")
+
         # 6b. run narrated progress into the thread
         r = await c.get(f"/api/tasks/{tid}")
         notes = [m["text"] for m in r.json()["messages"] if m["role"] == "agent"]

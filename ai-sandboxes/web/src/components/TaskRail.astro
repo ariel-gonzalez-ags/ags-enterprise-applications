@@ -26,6 +26,9 @@ import { providers } from '../content/console.js';
             </button>
           ))}
         </div>
+        <span class="prov-menu-label">Planner model</span>
+        <div class="model-list" data-console="models"></div>
+        <button class="prov-create" data-console="create-task" type="button">Create task</button>
       </div>
     </div>
   </div>
@@ -72,10 +75,11 @@ import { providers } from '../content/console.js';
   .prov-menu {
     position: absolute; top: calc(100% + 6px); right: 0; z-index: 60;
     background: var(--panel); border: 1px solid var(--line2); border-radius: 12px;
-    padding: 12px; width: 200px; box-shadow: 0 12px 40px rgba(0,0,0,.5);
+    padding: 12px; width: 240px; box-shadow: 0 12px 40px rgba(0,0,0,.5);
   }
   .prov-menu[hidden] { display: none }
-  .prov-menu-label { display: block; font-size: 10px; font-weight: 600; color: var(--muted2); text-transform: uppercase; letter-spacing: .08em; font-family: 'JetBrains Mono', monospace; margin-bottom: 8px }
+  .prov-menu-label { display: block; font-size: 10px; font-weight: 600; color: var(--muted2); text-transform: uppercase; letter-spacing: .08em; font-family: 'JetBrains Mono', monospace; margin: 10px 0 8px }
+  .prov-menu-label:first-child { margin-top: 0 }
   .prov-grid { display: flex; gap: 6px }
   .prov-icon { border-radius: 3px; display: block; height: 14px; width: auto; max-width: 22px; object-fit: contain }
   .prov-icon-aws { height: 10px }
@@ -86,6 +90,22 @@ import { providers } from '../content/console.js';
   }
   .prov:hover { opacity: .85; background: var(--raised) }
   .prov.on { opacity: 1; border-color: var(--accent); background: var(--raised) }
+  .model-list { display: flex; flex-direction: column; gap: 3px }
+  .model-list :global(.model-opt) {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+    width: 100%; text-align: left; background: transparent; border: 1px solid transparent;
+    border-radius: 8px; padding: 7px 9px; cursor: pointer; font-family: inherit; transition: .12s;
+  }
+  .model-list :global(.model-opt:hover) { background: var(--raised) }
+  .model-list :global(.model-opt.on) { border-color: var(--accent); background: var(--raised) }
+  .model-list :global(.model-name) { font-size: 12.5px; font-weight: 500; color: var(--text) }
+  .model-list :global(.model-blurb) { font-size: 10.5px; color: var(--muted2) }
+  .prov-create {
+    margin-top: 12px; width: 100%; font-size: 12.5px; font-weight: 600; padding: 8px;
+    border-radius: 9px; background: var(--accent); border: none; color: var(--on-accent);
+    cursor: pointer; transition: .15s; font-family: inherit;
+  }
+  .prov-create:hover { filter: brightness(1.1) }
 
   .task-list { display: flex; flex-direction: column; gap: 4px }
   /* Task cards render at runtime via console.js: Astro scoping doesn't

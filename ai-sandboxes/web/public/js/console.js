@@ -216,14 +216,57 @@
         ? '<div class="msg-agent-tag mono">planner agent</div>' : '';
       var card = (m.role === 'agent' && m.plan)
         ? planCard(m.plan, editable && i === latestPlanIdx) : '';
-      return '<div class="msg ' + m.role + '">' + tag +
-        '<div class="msg-body">' + esc(m.text) + '</div>' + card + '</div>';
+      // The newest agent reply types out (see below): render its body empty
+      // and let the typewriter fill it, so SSE re-renders do not fight it.
+      var isNewestAgent = m.role === 'agent' && i === selected.messages.length - 1;
+      var body = (isNewestAgent && shouldType(m)) ? '' : esc(m.text);
+      return '<div class="msg ' + m.role + '"' + (isNewestAgent ? ' data-console="latest-agent"' : '') + '>' + tag +
+        '<div class="msg-body">' + body + '</div>' + card + '</div>';
     }).join('');
     // Planner is composing a reply that hasn't landed yet: show the bubble.
     if (selected.agent_pending) {
       appendPending('planning…');
     }
     thread.scrollTop = thread.scrollHeight;
+    startTyping();
+  }
+
+  /* ---------- typing effect (model-agnostic) ----------
+   * The planner returns a complete reply (reasoning models buffer, so true
+   * token streaming is not available). We reveal the newest agent reply
+   * progressively instead. The effect lives entirely client-side, so it
+   * behaves identically no matter which model produced the text. The plan
+   * card pops in once the text finishes (it is structured JSON, it cannot
+   * render half-formed). */
+
+  var typedKeys = {};      // message keys already fully typed
+  var typeTimer = null;
+
+  function msgKey(m) { return m.at + '|' + m.text.length; }
+  function shouldType(m) { return !typedKeys[msgKey(m)] && m.text.length >= 24; }
+
+  function startTyping() {
+    var el = thread.querySelector('[data-console="latest-agent"] .msg-body');
+    if (!el || !selected) return;
+    var last = selected.messages[selected.messages.length - 1];
+    if (!last || last.role !== 'agent' || !shouldType(last)) return;
+    typedKeys[msgKey(last)] = true;  // mark before starting so re-renders show full text
+    var full = last.text;
+    if (typeTimer) { clearInterval(typeTimer); typeTimer = null; }
+    var i = 0;
+    var step = Math.max(2, Math.round(full.length / 50));  // ~50 frames, ~0.8s
+    typeTimer = setInterval(function () {
+      // If a re-render replaced the node, stop; the next render shows it full.
+      if (!el.isConnected) { clearInterval(typeTimer); typeTimer = null; return; }
+      i += step;
+      if (i >= full.length) {
+        el.textContent = full;
+        clearInterval(typeTimer); typeTimer = null;
+        return;
+      }
+      el.textContent = full.slice(0, i);
+      thread.scrollTop = thread.scrollHeight;
+    }, 16);
   }
 
   function appendPending(text) {
@@ -283,9 +326,13 @@
 
   /* ---------- target-cloud picker (rail) ---------- */
 
-  /* ---------- provider picker (dropdown under "New task") ---------- */
+  /* ---------- provider + model picker (dropdown under "New task") ---------- */
 
   var provMenu = document.querySelector('[data-console="prov-menu"]');
+  var modelList = document.querySelector('[data-console="models"]');
+  var createBtn = document.querySelector('[data-console="create-task"]');
+  var availModels = [];   // from GET /api/models
+  var pickedModel = localStorage.getItem('ags-model') || 'gemini-3.6-flash';
 
   function closeProvMenu() {
     if (provMenu) provMenu.hidden = true;
@@ -295,11 +342,9 @@
     var open = provMenu.hidden;
     provMenu.hidden = !open;
     newBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
-    if (open) renderProviders();
+    if (open) { renderProviders(); renderModels(); }
   }
 
-  // Reflect the selected task's provider; clicking while the task is
-  // shapeable PATCHes it. The picker also sets the provider for New task.
   function renderProviders() {
     var provs = provGrid.querySelectorAll('.prov');
     var current = selected ? selected.provider : (localStorage.getItem('ags-provider') || 'azure');
@@ -308,13 +353,48 @@
     }
   }
 
+  function renderModels() {
+    if (!availModels.length) { modelList.innerHTML = '<p class="p-empty">loading…</p>'; return; }
+    modelList.innerHTML = availModels.map(function (m) {
+      return '<button class="model-opt' + (m.id === pickedModel ? ' on' : '') + '" data-model="' + esc(m.id) + '" type="button">' +
+        '<span class="model-name">' + esc(m.name) + '</span>' +
+        '<span class="model-blurb">' + esc(m.blurb) + '</span></button>';
+    }).join('');
+  }
+
+  // Load the selectable planner models once.
+  api('/api/models').then(function (d) {
+    availModels = d.models || [];
+    if (!availModels.some(function (m) { return m.id === pickedModel; })) {
+      pickedModel = availModels.length ? availModels[0].id : pickedModel;
+    }
+  }).catch(function () {});
+
   provGrid.addEventListener('click', function (e) {
     var btn = e.target.closest('.prov');
     if (!btn) return;
-    var prov = btn.getAttribute('data-prov');
-    localStorage.setItem('ags-provider', prov);
+    localStorage.setItem('ags-provider', btn.getAttribute('data-prov'));
+    renderProviders();
+  });
+
+  modelList.addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-model]');
+    if (!btn) return;
+    pickedModel = btn.getAttribute('data-model');
+    localStorage.setItem('ags-model', pickedModel);
+    // Toggle classes in place; do NOT re-render (innerHTML) here. Re-rendering
+    // detaches the clicked node, so the document outside-click handler would
+    // see a stale target and wrongly close the menu.
+    var opts = modelList.querySelectorAll('.model-opt');
+    for (var i = 0; i < opts.length; i++) {
+      opts[i].classList.toggle('on', opts[i].getAttribute('data-model') === pickedModel);
+    }
+  });
+
+  createBtn.addEventListener('click', function () {
+    var prov = localStorage.getItem('ags-provider') || 'azure';
     closeProvMenu();
-    createTask(prov);
+    createTask(prov, pickedModel);
   });
 
   newBtn.addEventListener('click', function (e) {
@@ -324,7 +404,12 @@
 
   // Clicking anywhere outside the picker closes it.
   document.addEventListener('click', function (e) {
-    if (provMenu && !provMenu.hidden && !e.target.closest('.new-wrap')) closeProvMenu();
+    if (!provMenu || provMenu.hidden) return;
+    // Use the menu itself, not e.target.closest(): clicking a model option
+    // re-renders the list (innerHTML), which detaches the clicked node, so
+    // closest() on that stale element would wrongly report "outside".
+    if (provMenu.contains(e.target) || e.target.closest('.new-btn')) return;
+    closeProvMenu();
   });
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && provMenu && !provMenu.hidden) closeProvMenu();
@@ -481,10 +566,10 @@
     if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
   }
 
-  function createTask(prov) {
+  function createTask(prov, model) {
     if (busy) return;
     busy = true;
-    api('/api/tasks', { method: 'POST', body: JSON.stringify({ title: '', provider: prov }) })
+    api('/api/tasks', { method: 'POST', body: JSON.stringify({ title: '', provider: prov, model: model }) })
       .then(function (t) { return refreshList().then(function () { return select(t.id); }); })
       .catch(function () { /* surfaced by gate if auth broke */ })
       .then(function () { busy = false; input.focus(); });

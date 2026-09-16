@@ -209,10 +209,11 @@ that. Marketing pages stay prerendered (static) regardless.
 | Endpoint | Purpose |
 |---|---|
 | `GET /api/tasks` | rail list (lightweight, no messages) |
-| `POST /api/tasks` `{title}` | create in `drafting`, returns the task |
+| `POST /api/tasks` `{title, provider, model}` | create in `drafting`, returns the task |
+| `GET /api/models` | planner models the user can pick (from `planner.MODELS`) |
 | `GET /api/tasks/{id}` | full detail: messages, artifacts, config |
 | `POST /api/tasks/{id}/messages` `{text}` | **202 instantly**; planner replies in background, lands in thread |
-| `PATCH /api/tasks/{id}` `{formats}` | user edits the accepted deliverable set (drafting/planned only); slugs, dedupes, min 1 |
+| `PATCH /api/tasks/{id}` `{formats, provider, model}` | user edits deliverables / target cloud / planner model (drafting/planned only); formats slug+dedupe (min 1), provider and model validated against allowlists |
 | `DELETE /api/tasks/{id}` | 204; drafting/planned only. running/verified/delivered are records: 409 |
 | `POST /api/tasks/{id}/approve` | `planned` → `running`, spawns the simulated run |
 | `GET /api/tasks/{id}/artifacts/{filename}` | artifact contents, owner-scoped; `Content-Disposition: attachment`, `no-store` |
@@ -232,9 +233,25 @@ single-node (one dict of asyncio queues); a multi-node swap means replacing
 it with Redis pub/sub behind the same interface.
 
 **The planner sees the task's current settings.** `planner.reply(settings,
-history, state)` injects a context message with the accepted deliverables,
+history, state, model)` injects a context message with the accepted deliverables,
 target cloud, and idempotent/destroy/max-hours values, so re-planning
-respects the plan-card toggles instead of reverting to a prior plan.
+respects the plan-card toggles instead of reverting to a prior plan. The
+`model` arg is the per-task planner model from the New-task picker
+(`Task.model`, validated against `planner.MODELS`, default
+`gemini-3.6-flash`); the picker is data-driven from `GET /api/models`, so
+adding a model (or another provider later) is a list edit, not new routes.
+
+**Output is enforced by JSON schema, not prose.** Gemini 3.x are reasoning
+models that ignore a prose-only format instruction; `planner` sends
+`_PLAN_RESPONSE_FORMAT` (a `json_schema`) so the `{reply, title, plan}`
+shape is mandatory. `max_tokens` is 3000 because reasoning tokens count
+against the budget.
+
+**The typing effect is client-side and model-agnostic.** Reasoning models
+buffer the whole reply (no incremental token stream), so `console.js`
+reveals the newest agent reply progressively (faux-typing) after it lands.
+The effect is independent of which model produced the text; the plan card
+pops in once the text finishes (structured JSON cannot render half-formed).
 
 All gated by the session cookie, scoped to `owner_sub` (404 across owners,
 not 403, don't leak existence). Task JSON shape: `{id (GUID), title, state,

@@ -92,6 +92,17 @@ _PLAN_RESPONSE_FORMAT = {
     "json_schema": {"name": "plan", "schema": _PLAN_SCHEMA},
 }
 
+# Models a task may select. All are Gemini (OpenAI-compat endpoint); the
+# picker is data-driven so adding a provider later is a client-factory
+# change, not new routes. Verified: each accepts _PLAN_RESPONSE_FORMAT.
+MODELS = [
+    {"id": "gemini-3.6-flash", "name": "Gemini 3.6 Flash", "blurb": "Latest, recommended"},
+    {"id": "gemini-3.5-flash", "name": "Gemini 3.5 Flash", "blurb": "Prior generation"},
+    {"id": "gemini-3-flash-preview", "name": "Gemini 3 Flash", "blurb": "Preview"},
+    {"id": "gemini-3.1-flash-lite", "name": "Gemini 3.1 Flash Lite", "blurb": "Cheapest, fastest"},
+]
+MODEL_IDS = {m["id"] for m in MODELS}
+
 
 def _context_message(state: dict | None) -> str | None:
     """Render the task's current user-controlled settings as a system-style
@@ -118,12 +129,15 @@ def _context_message(state: dict | None) -> str | None:
     return "\n".join(lines)
 
 
-async def reply(settings: Settings, history: list[dict], state: dict | None = None) -> dict:
+async def reply(settings: Settings, history: list[dict], state: dict | None = None,
+                model: str | None = None) -> dict:
     """history: [{'role': 'user'|'agent', 'text': ...}] oldest first.
     state: current task settings ({provider, formats, idempotent,
     destroy_after, max_hours}) so re-planning respects the user's toggles.
-    Returns {'reply', 'title', 'plan'}; never raises on model/parse errors;
-    a degraded chat is better than a broken one."""
+    model: per-task model override (from the picker); falls back to the
+    configured default. Returns {'reply', 'title', 'plan'}; never raises on
+    model/parse errors; a degraded chat is better than a broken one."""
+    use_model = model if model in MODEL_IDS else settings.gemini_model
     messages = [{"role": "system", "content": _SYSTEM}]
     ctx = _context_message(state)
     if ctx:
@@ -136,7 +150,7 @@ async def reply(settings: Settings, history: list[dict], state: dict | None = No
 
     try:
         resp = await _client(settings).chat.completions.create(
-            model=settings.gemini_model,
+            model=use_model,
             messages=messages,
             temperature=0.3,
             # Gemini 3.x is a reasoning model: it spends tokens "thinking"
