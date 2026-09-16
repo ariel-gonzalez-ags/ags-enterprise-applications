@@ -328,10 +328,12 @@
   artList.addEventListener('click', function (e) {
     var card = e.target.closest('[data-art-url]');
     if (!card) return;
-    var url = card.getAttribute('data-art-url');
-    // Same-origin artifact URLs only; never let a markup-injected
-    // javascript: or absolute URL reach the download link or fetch.
-    if (typeof url !== 'string' || url.indexOf('/api/') !== 0 || url.indexOf('//') !== -1) return;
+    // Sanitize: only same-origin artifact paths are allowed. An allowlist
+    // regex (not a prefix check) so no javascript: or absolute URL can
+    // reach the href assignment.
+    var m = /^\/api\/tasks\/[0-9a-f-]+\/artifacts\/[\w.+-]+$/.exec(card.getAttribute('data-art-url') || '');
+    if (!m) return;
+    var url = m[0];
     viewerName.textContent = card.getAttribute('data-art-name');
     viewerBody.textContent = 'loading…';
     viewerDl.href = url;
