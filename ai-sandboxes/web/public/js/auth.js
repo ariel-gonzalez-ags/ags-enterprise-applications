@@ -7,7 +7,9 @@
   var LOGOUT_URL = '/api/auth/logout';
 
   function loginUrl() {
-    return LOGIN_URL + '?next=' + encodeURIComponent(location.pathname);
+    // Signing in means entering the product: always land on the console.
+    // (Previously this echoed the current page, which stranded users on /.)
+    return LOGIN_URL + '?next=' + encodeURIComponent('/app');
   }
 
   function wireSignIn(el) {
