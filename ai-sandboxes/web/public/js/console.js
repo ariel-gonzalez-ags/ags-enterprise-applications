@@ -329,6 +329,9 @@
   /* ---------- provider + model picker (dropdown under "New task") ---------- */
 
   var provMenu = document.querySelector('[data-console="prov-menu"]');
+  var modelDd = provMenu ? provMenu.querySelector('.model-dd') : null;
+  var modelBtn = document.querySelector('[data-console="model-btn"]');
+  var modelCurrent = document.querySelector('[data-console="model-current"]');
   var modelList = document.querySelector('[data-console="models"]');
   var createBtn = document.querySelector('[data-console="create-task"]');
   var availModels = [];   // from GET /api/models
@@ -337,12 +340,13 @@
   function closeProvMenu() {
     if (provMenu) provMenu.hidden = true;
     newBtn.setAttribute('aria-expanded', 'false');
+    closeModelList();
   }
   function toggleProvMenu() {
     var open = provMenu.hidden;
     provMenu.hidden = !open;
     newBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
-    if (open) { renderProviders(); renderModels(); }
+    if (open) { renderProviders(); renderModels(); syncModelBtn(); }
   }
 
   function renderProviders() {
@@ -351,6 +355,25 @@
     for (var i = 0; i < provs.length; i++) {
       provs[i].classList.toggle('on', provs[i].getAttribute('data-prov') === current);
     }
+  }
+
+  function modelName(id) {
+    var m = availModels.find(function (x) { return x.id === id; });
+    return m ? m.name : id;
+  }
+  function syncModelBtn() { modelCurrent.textContent = modelName(pickedModel); }
+
+  function closeModelList() {
+    modelList.hidden = true;
+    modelDd.classList.remove('open');
+    modelBtn.setAttribute('aria-expanded', 'false');
+  }
+  function toggleModelList() {
+    var open = modelList.hidden;
+    modelList.hidden = !open;
+    modelDd.classList.toggle('open', open);
+    modelBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) renderModels();
   }
 
   function renderModels() {
@@ -368,6 +391,7 @@
     if (!availModels.some(function (m) { return m.id === pickedModel; })) {
       pickedModel = availModels.length ? availModels[0].id : pickedModel;
     }
+    syncModelBtn();
   }).catch(function () {});
 
   provGrid.addEventListener('click', function (e) {
@@ -377,18 +401,18 @@
     renderProviders();
   });
 
+  modelBtn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    toggleModelList();
+  });
+
   modelList.addEventListener('click', function (e) {
     var btn = e.target.closest('[data-model]');
     if (!btn) return;
     pickedModel = btn.getAttribute('data-model');
     localStorage.setItem('ags-model', pickedModel);
-    // Toggle classes in place; do NOT re-render (innerHTML) here. Re-rendering
-    // detaches the clicked node, so the document outside-click handler would
-    // see a stale target and wrongly close the menu.
-    var opts = modelList.querySelectorAll('.model-opt');
-    for (var i = 0; i < opts.length; i++) {
-      opts[i].classList.toggle('on', opts[i].getAttribute('data-model') === pickedModel);
-    }
+    syncModelBtn();
+    closeModelList();  // collapse back to the single-line selector
   });
 
   createBtn.addEventListener('click', function () {
@@ -412,7 +436,9 @@
     closeProvMenu();
   });
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && provMenu && !provMenu.hidden) closeProvMenu();
+    if (e.key !== 'Escape') return;
+    if (modelList && !modelList.hidden) { closeModelList(); return; }
+    if (provMenu && !provMenu.hidden) closeProvMenu();
   });
 
   /* ---------- inspector ---------- */
