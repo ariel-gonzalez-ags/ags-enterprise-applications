@@ -329,6 +329,9 @@
     var card = e.target.closest('[data-art-url]');
     if (!card) return;
     var url = card.getAttribute('data-art-url');
+    // Same-origin artifact URLs only; never let a markup-injected
+    // javascript: or absolute URL reach the download link or fetch.
+    if (typeof url !== 'string' || url.indexOf('/api/') !== 0 || url.indexOf('//') !== -1) return;
     viewerName.textContent = card.getAttribute('data-art-name');
     viewerBody.textContent = 'loading…';
     viewerDl.href = url;

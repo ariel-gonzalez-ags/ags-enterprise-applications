@@ -130,5 +130,7 @@ async def normalize_format(settings: Settings, raw: str) -> dict | None:
         if isinstance(fmt, str) and isinstance(ext, str) and ext.startswith("."):
             return {"format": fmt.strip().lower(), "ext": ext.strip().lower()}
     except Exception:
-        pass
+        # Any planner/parse failure: caller falls back to the mechanical
+        # slug guess, so a bad normalization never breaks the run.
+        return None
     return None
