@@ -46,11 +46,11 @@ def _safe_next(raw: str | None) -> str:
     """Only allow same-site relative paths as post-login destinations."""
     if raw and raw.startswith("/") and not raw.startswith("//"):
         return raw
-    return "/"
+    return "/app"
 
 
 @router.get("/login")
-async def login(request: Request, next: str = "/"):
+async def login(request: Request, next: str = "/app"):
     settings: Settings = request.app.state.settings
     if not settings.oauth_configured:
         raise HTTPException(503, "Google OAuth is not configured (set GOOGLE_CLIENT_ID/SECRET)")
