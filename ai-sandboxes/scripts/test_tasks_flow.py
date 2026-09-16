@@ -71,27 +71,40 @@ async def main():
         assert r.json()["state"] == "drafting"
         print("ok    task created in drafting:", tid)
 
-        # 3. chat without planner key → 503
+        # 3. chat without planner key: accepted, degradation lands in-thread
         with mock.patch("app.routers.tasks.planner.reply",
                         side_effect=__import__("app.planner", fromlist=["PlannerUnavailable"]).PlannerUnavailable):
             r = await c.post(f"/api/tasks/{tid}/messages", json={"text": "hi"})
-            assert r.status_code == 503, r.status_code
-        print("ok    chat without planner returns 503")
+            assert r.status_code == 202, r.text
+            from app.routers.tasks import _plan_in_background
+            await _plan_in_background(tid, app.state.settings)
+        r = await c.get(f"/api/tasks/{tid}")
+        msgs = r.json()["messages"]
+        assert "isn't configured" in msgs[-1]["text"], msgs[-1]["text"]
+        assert r.json()["agent_pending"] is False
+        print("ok    missing planner key degrades into an in-thread message")
 
-        # 4. chat with mocked planner → agent reply + plan → planned
+        # 4. chat with mocked planner → 202 instantly, reply lands async
         with mock.patch("app.routers.tasks.planner.reply",
                         new=mock.AsyncMock(return_value=MOCK_PLAN)):
             r = await c.post(f"/api/tasks/{tid}/messages",
                              json={"text": "Harden my Ubuntu VMs to CIS L2"})
-        assert r.status_code == 201, r.text
-        body = r.json()
-        assert body["message"]["plan"]["deliverables"][0]["id"] == "ansible"
-        t = body["task"]
+            assert r.status_code == 202, r.text
+            assert r.json()["accepted"] is True
+            # run the background planner deterministically
+            from app.routers.tasks import _plan_in_background
+            await _plan_in_background(tid, app.state.settings)
+
+        r = await c.get(f"/api/tasks/{tid}")
+        t = r.json()
         assert t["state"] == "planned", t["state"]
         assert t["title"] == "Harden Ubuntu to CIS L2"
         assert t["provider"] == "azure" and "ansible" in t["formats"]
         assert t["config"]["maxHours"] == 3
-        print("ok    mock plan flips task to planned with config")
+        assert t["agent_pending"] is False
+        agent_msgs = [m for m in t["messages"] if m["role"] == "agent"]
+        assert agent_msgs and agent_msgs[-1]["plan"]["deliverables"][0]["id"] == "ansible"
+        print("ok    async planner: 202 accepted, plan landed, task planned")
 
         # 5. approve → running, then simulated run lands at verified.
         # Spawn is mocked out so the test drives the run deterministically.
@@ -116,6 +129,13 @@ async def main():
         r = await c.post(f"/api/tasks/{tid}/messages", json={"text": "more?"})
         assert r.status_code == 409, r.status_code
         print("ok    chat rejected once task is verified")
+
+        # 6b. run narrated progress into the thread
+        r = await c.get(f"/api/tasks/{tid}")
+        notes = [m["text"] for m in r.json()["messages"] if m["role"] == "agent"]
+        assert any("Sandbox is up" in n for n in notes), notes
+        assert any("checks green" in n for n in notes), notes
+        print("ok    run posted progress + completion messages")
 
         # 7. other user cannot see the task
         c.cookies.set("ags_session", _signed_cookie(settings, sub="user-2"))

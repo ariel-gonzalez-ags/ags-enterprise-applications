@@ -1,5 +1,7 @@
 """Product API: tasks, brainstorm messages, plan approval. All routes are
 gated by the signed session cookie and scoped to the owning user."""
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -32,6 +34,7 @@ def _task_json(t: Task, detail: bool = False) -> dict:
         "formats": t.formats,
         "idempotent": t.idempotent,
         "checks": {"passed": t.checks_passed, "total": t.checks_total},
+        "agent_pending": t.agent_pending,
         "updated": t.updated_at,
     }
     if detail:
@@ -90,7 +93,6 @@ async def get_task(task_id: str, user: dict = Depends(_user)):
         t = await s.get(Task, task_id)
         if t is None or t.owner_sub != user["sub"]:
             raise HTTPException(404, "task not found")
-        await s.refresh(t, ["messages", "artifacts"])
         return _task_json(t, detail=True)
 
 
@@ -98,8 +100,52 @@ class ChatIn(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
 
 
-@router.post("/tasks/{task_id}/messages", status_code=201)
+async def _plan_in_background(task_id: str, settings: Settings) -> None:
+    """Runs the planner against the persisted conversation, then records the
+    reply and any plan. Never raises: failures land as an in-thread message
+    so the user is never left staring at a spinner."""
+    async with db.session() as s:
+        t = await s.get(Task, task_id)
+        if t is None:
+            return
+        history = [{"role": m.role, "text": m.text} for m in t.messages]
+
+    try:
+        out = await planner.reply(settings, history)
+        reply_text, title, plan = out["reply"], out["title"], out["plan"]
+    except planner.PlannerUnavailable:
+        reply_text, title, plan = (
+            "The planner isn't configured yet (missing API key). An admin can set GEMINI_API_KEY.",
+            None, None)
+    except Exception:
+        reply_text, title, plan = (
+            "Something went wrong on my side. Send that again?", None, None)
+
+    async with db.session() as s:
+        t = await s.get(Task, task_id)
+        if t is None:
+            return
+        s.add(Message(task_id=t.id, role="agent", text=reply_text, plan_json=plan))
+        if title and t.title in ("", "Untitled task"):
+            t.title = title[:200]
+        if plan and t.state == "drafting":
+            t.state = "planned"
+            t.provider = (plan.get("clouds") or [t.provider])[0]
+            t.formats = [d.get("id") for d in plan.get("deliverables", [])
+                         if isinstance(d.get("id"), str)] or t.formats
+            est = plan.get("est_hours")
+            if isinstance(est, (int, float)) and 0 < est <= 24:
+                t.max_hours = int(est)
+        t.agent_pending = False
+        await s.commit()
+
+
+@router.post("/tasks/{task_id}/messages", status_code=202)
 async def chat(task_id: str, body: ChatIn, request: Request, user: dict = Depends(_user)):
+    """Accepts the user's message instantly (202) and plans in the background.
+    The client polls GET /tasks/{id}: agent_pending=True means a reply is on
+    its way. This is the same shape real long-running agents will use; chat
+    latency and run duration are no longer coupled to any HTTP request."""
     settings = _settings(request)
     async with db.session() as s:
         t = await s.get(Task, task_id)
@@ -107,35 +153,14 @@ async def chat(task_id: str, body: ChatIn, request: Request, user: dict = Depend
             raise HTTPException(404, "task not found")
         if t.state not in ("drafting", "planned"):
             raise HTTPException(409, f"task is {t.state}; chat is closed")
+        if t.agent_pending:
+            raise HTTPException(409, "planner is already replying")
         s.add(Message(task_id=t.id, role="user", text=body.text.strip()))
+        t.agent_pending = True
         await s.commit()
-        await s.refresh(t, ["messages"])
-        history = [{"role": m.role, "text": m.text} for m in t.messages]
 
-    try:
-        out = await planner.reply(settings, history)
-    except planner.PlannerUnavailable:
-        raise HTTPException(503, "planner not configured (GEMINI_API_KEY)")
-
-    async with db.session() as s:
-        t = await s.get(Task, task_id)
-        agent_msg = Message(task_id=t.id, role="agent", text=out["reply"], plan_json=out["plan"])
-        s.add(agent_msg)
-        if out["title"] and t.title in ("", "Untitled task"):
-            t.title = out["title"][:200]
-        if out["plan"]:
-            t.state = "planned"
-            t.provider = (out["plan"].get("clouds") or [t.provider])[0]
-            t.formats = [d.get("id") for d in out["plan"].get("deliverables", [])
-                         if isinstance(d.get("id"), str)] or t.formats
-            est = out["plan"].get("est_hours")
-            if isinstance(est, (int, float)) and 0 < est <= 24:
-                t.max_hours = int(est)
-        await s.commit()
-        await s.refresh(t, ["messages", "artifacts"])
-        return {"message": {"role": "agent", "text": agent_msg.text,
-                            "plan": agent_msg.plan_json, "at": agent_msg.created_at},
-                "task": _task_json(t, detail=True)}
+    asyncio.get_running_loop().create_task(_plan_in_background(task_id, settings))
+    return {"accepted": True, "task_id": task_id}
 
 
 @router.post("/tasks/{task_id}/approve")

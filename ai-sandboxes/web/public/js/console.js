@@ -132,6 +132,10 @@
       return '<div class="msg ' + m.role + '">' + tag +
         '<div class="msg-body">' + esc(m.text) + '</div>' + card + '</div>';
     }).join('');
+    // Planner is composing a reply that hasn't landed yet: show the bubble.
+    if (selected.agent_pending) {
+      appendPending('planning…');
+    }
     thread.scrollTop = thread.scrollHeight;
   }
 
@@ -211,7 +215,9 @@
 
   function schedulePoll() {
     if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
-    if (selected && selected.state === 'running') {
+    // Poll while the planner is replying or the sandbox is running: the
+    // server owns both timelines; the client just refreshes state.
+    if (selected && (selected.state === 'running' || selected.agent_pending)) {
       pollTimer = setTimeout(function () {
         select(selectedId).then(refreshList);
       }, 3000);
@@ -234,13 +240,12 @@
     sendBtn.disabled = true;
     input.value = '';
     var pending = appendPending('planning…');
+    // 202: the message is queued and the planner replies in the background.
+    // The pending bubble stays until polling picks up the real agent reply.
     api('/api/tasks/' + encodeURIComponent(selectedId) + '/messages', {
       method: 'POST', body: JSON.stringify({ text: text }),
-    }).then(function (d) {
-      pending.remove();
-      selected = d.task;
-      renderAll();
-      refreshList();
+    }).then(function () {
+      select(selectedId).then(refreshList);  // shows user msg + agent_pending; polling takes over
     }).catch(function (err) {
       pending.querySelector('.msg-body').textContent =
         err.status === 503 ? 'Planner is not configured yet (missing API key).' :

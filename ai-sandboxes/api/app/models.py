@@ -37,14 +37,16 @@ class Task(Base):
     max_hours: Mapped[int] = mapped_column(Integer, default=4)
     checks_passed: Mapped[int] = mapped_column(Integer, default=0)
     checks_total: Mapped[int] = mapped_column(Integer, default=0)
+    agent_pending: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[int] = mapped_column(Integer, default=now)
     updated_at: Mapped[int] = mapped_column(Integer, default=now, onupdate=now)
 
     messages: Mapped[list["Message"]] = relationship(
-        back_populates="task", cascade="all, delete-orphan", order_by="Message.created_at"
+        back_populates="task", cascade="all, delete-orphan", order_by="Message.created_at",
+        lazy="selectin",
     )
     artifacts: Mapped[list["Artifact"]] = relationship(
-        back_populates="task", cascade="all, delete-orphan"
+        back_populates="task", cascade="all, delete-orphan", lazy="selectin",
     )
 
 
