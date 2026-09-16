@@ -59,11 +59,39 @@ def _fallback(reply: str) -> dict:
     return {"reply": reply, "title": None, "plan": None}
 
 
-async def reply(settings: Settings, history: list[dict]) -> dict:
+def _context_message(state: dict | None) -> str | None:
+    """Render the task's current user-controlled settings as a system-style
+    note so the planner honors them instead of reverting to a prior plan.
+    The user edits these via the plan card toggles; they are the source of
+    truth for deliverables/cloud/guarantees."""
+    if not state:
+        return None
+    fmts = ", ".join(state.get("formats") or []) or "none chosen"
+    lines = [
+        "Current task settings the user has already chosen (treat as fixed):",
+        f"- Accepted deliverables: {fmts}",
+        f"- Target cloud: {state.get('provider', 'azure')}",
+        f"- Idempotent result: {'yes' if state.get('idempotent') else 'no'}",
+        f"- Destroy sandbox after handover: {'yes' if state.get('destroy_after') else 'no'}",
+        f"- Max sandbox hours: {state.get('max_hours', 4)}",
+        "When you propose or revise a plan, the deliverables list MUST match "
+        "the accepted deliverables above exactly (same ids, no more, no "
+        "fewer), and clouds must be the target cloud. Do not re-add "
+        "deliverables the user removed.",
+    ]
+    return "\n".join(lines)
+
+
+async def reply(settings: Settings, history: list[dict], state: dict | None = None) -> dict:
     """history: [{'role': 'user'|'agent', 'text': ...}] oldest first.
+    state: current task settings ({provider, formats, idempotent,
+    destroy_after, max_hours}) so re-planning respects the user's toggles.
     Returns {'reply', 'title', 'plan'}; never raises on model/parse errors;
     a degraded chat is better than a broken one."""
     messages = [{"role": "system", "content": _SYSTEM}]
+    ctx = _context_message(state)
+    if ctx:
+        messages.append({"role": "system", "content": ctx})
     for m in history[-20:]:  # keep context window small and cheap
         messages.append({
             "role": "user" if m["role"] == "user" else "assistant",

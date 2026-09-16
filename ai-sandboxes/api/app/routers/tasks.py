@@ -3,11 +3,11 @@ gated by the signed session cookie and scoped to the owning user."""
 import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from .. import db, planner, runner
+from .. import db, events, planner, runner
 from ..config import Settings
 from ..models import Artifact, Message, Task
 from ..session import get_session
@@ -183,6 +183,32 @@ async def patch_task(task_id: str, body: PatchTask, user: dict = Depends(_user))
         return _task_json(t, detail=True)
 
 
+@router.get("/tasks/{task_id}/events")
+async def task_events(task_id: str, request: Request, user: dict = Depends(_user)):
+    """Server-sent events: one {"changed": true} nudge per state change. The
+    payload carries no data; the client re-fetches GET /tasks/{id} on each
+    nudge, so the stream can never drift from the DB. Ownership is checked
+    once up front (404 across owners, same as every other route)."""
+    async with db.session() as s:
+        t = await s.get(Task, task_id)
+        if t is None or t.owner_sub != user["sub"]:
+            raise HTTPException(404, "task not found")
+
+    async def gen():
+        try:
+            async for _ in events.subscribe(task_id):
+                yield "data: {\"changed\": true}\n\n"
+                if await request.is_disconnected():
+                    break
+        except asyncio.CancelledError:
+            pass
+
+    return StreamingResponse(gen(), media_type="text/event-stream", headers={
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",  # don't let nginx buffer the stream
+    })
+
+
 class ChatIn(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
 
@@ -196,9 +222,16 @@ async def _plan_in_background(task_id: str, settings: Settings) -> None:
         if t is None:
             return
         history = [{"role": m.role, "text": m.text} for m in t.messages]
+        state = {
+            "provider": t.provider,
+            "formats": list(t.formats or []),
+            "idempotent": t.idempotent,
+            "destroy_after": t.destroy_after,
+            "max_hours": t.max_hours,
+        }
 
     try:
-        out = await planner.reply(settings, history)
+        out = await planner.reply(settings, history, state)
         reply_text, title, plan = out["reply"], out["title"], out["plan"]
     except planner.PlannerUnavailable:
         reply_text, title, plan = (
@@ -225,6 +258,7 @@ async def _plan_in_background(task_id: str, settings: Settings) -> None:
                 t.max_hours = int(est)
         t.agent_pending = False
         await s.commit()
+        events.publish(task_id)
 
 
 @router.post("/tasks/{task_id}/messages", status_code=202)
@@ -245,6 +279,7 @@ async def chat(task_id: str, body: ChatIn, request: Request, user: dict = Depend
         s.add(Message(task_id=t.id, role="user", text=body.text.strip()))
         t.agent_pending = True
         await s.commit()
+        events.publish(task_id)
 
     asyncio.get_running_loop().create_task(_plan_in_background(task_id, settings))
     return {"accepted": True, "task_id": task_id}

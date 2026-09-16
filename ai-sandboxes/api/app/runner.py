@@ -5,7 +5,7 @@ the swap point is run_task() itself. Progress is posted as agent messages so
 the thread narrates the run (real executors will do the same)."""
 import asyncio
 
-from . import db
+from . import db, events
 from .models import Artifact, Message, Task
 
 _TICK_SECONDS = 3  # dev-friendly; real runs will be event-driven
@@ -92,6 +92,7 @@ async def run_task(task_id: str, settings=None) -> None:
         await _say(s, task_id,
                    f"Sandbox is up on {task.provider}. Running {total} acceptance checks.")
         await s.commit()
+        events.publish(task_id)
 
     for passed in range(1, total + 1):
         await asyncio.sleep(_TICK_SECONDS)
@@ -103,6 +104,7 @@ async def run_task(task_id: str, settings=None) -> None:
             if passed == total // 2:
                 await _say(s, task_id, f"Halfway: {passed}/{total} checks green.")
             await s.commit()
+            events.publish(task_id)
 
     async with db.session() as s:
         task = await s.get(Task, task_id)
@@ -131,6 +133,7 @@ async def run_task(task_id: str, settings=None) -> None:
                    f"All {total} checks green. {len(seen)} artifacts delivered; "
                    "sandbox is torn down, evidence kept.")
         await s.commit()
+        events.publish(task_id)
 
 
 def spawn(task_id: str, settings=None) -> None:

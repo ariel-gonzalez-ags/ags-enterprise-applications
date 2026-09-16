@@ -9,14 +9,13 @@ import Icon from './Icon.astro';
     <a href="/app" class="brand"><Logo size={26} /><span class="word">Agisphire</span><span class="env mono">console</span></a>
 
     <div class="cnav-mid">
-      <button class="search mono" title="Search tasks and artifacts (mock)">
-        <Icon name="search" size={14} /> Search tasks, artifacts… <kbd>⌘K</kbd>
+      <button class="search mono" data-console="nav-search" title="Search your tasks" type="button">
+        <Icon name="search" size={14} /> Search tasks… <kbd>⌘K</kbd>
       </button>
     </div>
 
     <nav class="cnav-links">
       <a href="/app" class="active"><Icon name="folder" size={14} /> Tasks</a>
-      <a href="/app/artifacts"><Icon name="library" size={14} /> Artifacts</a>
     </nav>
 
     <div class="cnav-user" data-auth="user" data-auth-menu></div>

@@ -40,6 +40,7 @@
   var selected = null;      // full detail of the selected task
   var selectedId = null;
   var pollTimer = null;
+  var eventSrc = null;      // EventSource for the selected task, when supported
   var busy = false;
 
   /* ---------- helpers ---------- */
@@ -396,19 +397,56 @@
     return api('/api/tasks/' + encodeURIComponent(id)).then(function (t) {
       selected = t;
       renderAll();
-      schedulePoll();
+      // Live updates: stream state changes, fall back to polling if SSE is
+      // unavailable. Tasks that are neither running nor awaiting a planner
+      // reply have no live phase, so nothing to stream.
+      if (t.state === 'running' || t.agent_pending) openStream();
+      else closeStream();
     });
   }
 
   function schedulePoll() {
     if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
-    // Poll while the planner is replying or the sandbox is running: the
-    // server owns both timelines; the client just refreshes state.
+    // Fallback only: when SSE is unavailable or the stream dropped, poll
+    // while the planner is replying or the sandbox is running. The stream
+    // is the primary channel; this keeps the UI correct without it.
     if (selected && (selected.state === 'running' || selected.agent_pending)) {
       pollTimer = setTimeout(function () {
         select(selectedId).then(refreshList);
       }, 3000);
     }
+  }
+
+  /* ---------- live updates via SSE (with polling fallback) ---------- */
+
+  function openStream() {
+    closeStream();
+    if (!selectedId || typeof EventSource === 'undefined') { schedulePoll(); return; }
+    var es = new EventSource('/api/tasks/' + encodeURIComponent(selectedId) + '/events');
+    eventSrc = es;
+    es.onmessage = function () {
+      if (!selectedId) return;
+      // A nudge means state changed; re-fetch the task. Once the task is no
+      // longer running or awaiting a planner reply, the live phase is over:
+      // close the stream rather than hold a connection per task forever.
+      api('/api/tasks/' + encodeURIComponent(selectedId)).then(function (t) {
+        if (t.id !== selectedId) return;
+        selected = t;
+        renderAll();
+        refreshList();
+        if (!(t.state === 'running' || t.agent_pending)) closeStream();
+      }).catch(function () {});
+    };
+    es.onerror = function () {
+      // Stream failed or was rejected: fall back to polling.
+      closeStream();
+      schedulePoll();
+    };
+  }
+
+  function closeStream() {
+    if (eventSrc) { eventSrc.close(); eventSrc = null; }
+    if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
   }
 
   newBtn.addEventListener('click', function () {
@@ -458,6 +496,74 @@
       .then(function () { return select(selectedId).then(refreshList); })
       .catch(function () {})
       .then(function () { busy = false; });
+  });
+
+  /* ---------- command palette (search your tasks) ---------- */
+
+  var paletteEl = document.querySelector('[data-console="palette"]');
+  var paletteInput = document.querySelector('[data-console="palette-input"]');
+  var paletteList = document.querySelector('[data-console="palette-list"]');
+  var navSearch = document.querySelector('[data-console="nav-search"]');
+  var palIdx = 0;
+
+  function paletteMatches() {
+    var q = paletteInput.value.trim().toLowerCase();
+    if (!q) return tasks.slice();
+    return tasks.filter(function (t) {
+      return t.title.toLowerCase().indexOf(q) !== -1 ||
+        t.id.toLowerCase().indexOf(q) !== -1 ||
+        t.state.toLowerCase().indexOf(q) !== -1 ||
+        (t.provider || '').toLowerCase().indexOf(q) !== -1;
+    });
+  }
+
+  function renderPalette() {
+    var rows = paletteMatches();
+    if (palIdx >= rows.length) palIdx = Math.max(0, rows.length - 1);
+    if (!rows.length) {
+      paletteList.innerHTML = '<p class="p-empty">No tasks match.</p>';
+      return;
+    }
+    paletteList.innerHTML = rows.map(function (t, i) {
+      return '<button class="p-row' + (i === palIdx ? ' on' : '') + '" data-pal="' + esc(t.id) + '" type="button">' +
+        '<span class="p-main"><span class="p-title">' + esc(t.title) + '</span>' +
+        '<span class="p-sub mono">' + esc(t.id.slice(0, 8)) + ' · ' + esc(t.provider) + '</span></span>' +
+        '<span class="p-state">' + esc(t.state) + '</span></button>';
+    }).join('');
+  }
+
+  function openPalette() {
+    paletteEl.hidden = false;
+    paletteInput.value = '';
+    palIdx = 0;
+    renderPalette();
+    paletteInput.focus();
+  }
+  function closePalette() { paletteEl.hidden = true; }
+  function paletteOpen() { return !paletteEl.hidden; }
+  function paletteGo(id) { closePalette(); select(id); }
+
+  if (navSearch) navSearch.addEventListener('click', openPalette);
+  paletteInput.addEventListener('input', function () { palIdx = 0; renderPalette(); });
+  paletteList.addEventListener('click', function (e) {
+    var row = e.target.closest('[data-pal]');
+    if (row) paletteGo(row.getAttribute('data-pal'));
+  });
+  paletteEl.addEventListener('click', function (e) { if (e.target === paletteEl) closePalette(); });
+
+  document.addEventListener('keydown', function (e) {
+    var mod = e.metaKey || e.ctrlKey;
+    if (mod && (e.key === 'k' || e.key === 'K')) {
+      e.preventDefault();
+      if (paletteOpen()) closePalette(); else openPalette();
+      return;
+    }
+    if (!paletteOpen()) return;
+    if (e.key === 'Escape') { closePalette(); return; }
+    var rows = paletteMatches();
+    if (e.key === 'ArrowDown') { e.preventDefault(); palIdx = Math.min(rows.length - 1, palIdx + 1); renderPalette(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); palIdx = Math.max(0, palIdx - 1); renderPalette(); }
+    else if (e.key === 'Enter') { e.preventDefault(); if (rows[palIdx]) paletteGo(rows[palIdx].id); }
   });
 
   /* ---------- boot ---------- */
