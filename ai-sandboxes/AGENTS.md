@@ -227,6 +227,10 @@ Operational gotchas:
   inherits ownership from the image's `chown nobody:nogroup /data`. If you
   ever see `sqlite3.OperationalError: unable to open database file`, that's
   a volume created before that chown: `docker compose down -v` fixes it.
+- nginx has `absolute_redirect off` (see nginx.conf). Without it, redirects
+  like `/app` → `/app/` carry the container port (8080) and browsers hit
+  connection-refused, because the host maps 8090→8080. Never re-enable
+  absolute redirects while behind a port mapping.
 
 ## Workflow
 
