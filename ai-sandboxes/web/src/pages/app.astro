@@ -13,13 +13,17 @@ import RunInspector from '../components/RunInspector.astro';
 </ConsoleShell>
 
 <script>
-  // Gate: anonymous → reveal overlay; signed in → console stays as-is.
+  // Gate: anonymous → reveal overlay; signed in → boot the console client.
   fetch('/api/auth/me', { credentials: 'same-origin' })
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (data) {
       if (!data || !data.user) {
         document.getElementById('gate').hidden = false;
+        return;
       }
+      var s = document.createElement('script');
+      s.src = '/js/console.js';
+      document.body.appendChild(s);
     })
     .catch(function () {
       document.getElementById('gate').hidden = false;

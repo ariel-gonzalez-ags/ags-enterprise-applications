@@ -11,6 +11,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app/ ./app/
 
+# SQLite lives here (compose mounts a named volume over it); the volume
+# inherits these ownership bits on first creation.
+RUN mkdir -p /data && chown nobody:nogroup /data
+
 USER nobody
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=3s --retries=3 \

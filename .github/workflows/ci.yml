@@ -40,6 +40,8 @@ jobs:
       - run: pip install -r api/requirements.txt
       - name: Auth flow e2e (Google mocked)
         run: python scripts/test_auth_flow.py
+      - name: Tasks flow e2e (planner mocked)
+        run: python scripts/test_tasks_flow.py
 
   images:
     runs-on: ubuntu-latest

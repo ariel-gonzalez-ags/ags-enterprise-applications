@@ -13,18 +13,20 @@ Two services, orchestrated by `docker-compose.yml`:
 - **`web/`** — static Astro site, compiled to plain HTML at build time, served
   by nginx-unprivileged. No UI framework, no CSS framework, and only one
   sanctioned piece of client JS (`public/js/auth.js`, see rule 8).
-- **`api/`** — FastAPI service. Today: Google OAuth (authorization-code flow
-  with PKCE, signed session cookie) and a health endpoint. Tomorrow: the
-  product API (task submission, sandbox status). Python files live under
-  `api/app/`, routers in `api/app/routers/`.
+- **`api/`** — FastAPI service. Google OAuth (authorization-code flow
+  with PKCE, signed session cookie), health endpoint, and the product API:
+  tasks, brainstorm chat with the planner (Gemini), plan approval, simulated
+  sandbox runs. Python files live under `api/app/`, routers in
+  `api/app/routers/`. State persists in SQLite on a compose volume.
 
 The browser only talks to nginx (container :8080, host :8090). nginx serves
 static files directly and proxies `/api/*` to the api container.
 
-**Phase note.** Auth landed in phase 2 (Google sign-in + protected `/app`
-placeholder). Task submission and live status are next — when a requirement
-crosses new architectural ground (database, background workers, websockets),
-**stop and flag it to the user before implementing**. See "Evolution path".
+**Phase note.** Auth (phase 2) and the product backend (phase 3: tasks,
+planner chat, simulated runs) are done. Next is real sandbox execution —
+when a requirement crosses new architectural ground (cloud credentials,
+sandbox orchestration, websockets for live status), **stop and flag it to
+the user before implementing**. See "Evolution path".
 
 ## Stack decisions (already made — don't revisit without a reason)
 
@@ -46,8 +48,26 @@ crosses new architectural ground (database, background workers, websockets),
   Host port 8090. All base images pinned by digest.
 - **Node 26** for frontend builds; the web image contains no Node at runtime.
 - **Secrets via env only**: `GOOGLE_CLIENT_ID/SECRET`, `SESSION_SECRET`,
-  `BASE_URL`, `COOKIE_SECURE` — template in `.env.example`, real values in
-  gitignored `.env.local`, injected by compose. Never in code or images.
+  `GEMINI_API_KEY`, `GEMINI_MODEL`, `BASE_URL`, `COOKIE_SECURE` — template in
+  `.env.example`, real values in gitignored `.env.local`, injected by compose.
+  Never in code or images.
+- **Persistence**: SQLite via async SQLAlchemy (`app/db.py`, `app/models.py`),
+  file on the `ags-data` compose volume mounted at `/data`. Task IDs are
+  GUIDs (uuid4) — product convention. Chosen over Postgres deliberately:
+  zero extra services while the product is single-node; the dialect is
+  abstracted, so Postgres later is a connection-string change (DATABASE_URL),
+  not a rewrite. Revisit when we need multi-writer, real concurrency, or
+  managed backups.
+- **Planner LLM**: Gemini via Google's OpenAI-compatible endpoint, driven by
+  the `openai` SDK (`app/planner.py`). This is deliberate — migrating to
+  Vertex AI + Workload Identity Federation later changes only the client
+  factory (base_url/auth), not routes or services. The model must return
+  strict JSON `{reply, title, plan|null}`; parse/API failures degrade to a
+  plain chat reply, never a 500.
+- **Runs are simulated** (`app/runner.py`): an asyncio coroutine ticks
+  `checks_passed` and lands at `verified` with per-format proof artifacts.
+  It exercises the exact task state machine real sandboxes will use — the
+  swap point is `run_task()` itself. No Celery/Redis yet.
 
 ## Directory map
 
@@ -63,19 +83,25 @@ crosses new architectural ground (database, background workers, websockets),
 │   ├── prod.sh           ← docker compose up --build (production-like)
 │   └── test_auth_flow.py ← e2e auth test with Google mocked (run in venv)
 ├── api/
-│   ├── Dockerfile        ← python:3.14-slim + uvicorn, non-root
-│   ├── requirements.txt  ← pinned majors (fastapi, uvicorn, httpx, itsdangerous)
+│   ├── Dockerfile        ← python:3.14-slim + uvicorn, non-root, /data volume
+│   ├── requirements.txt  ← pinned majors (fastapi, uvicorn, httpx,
+│   │                       itsdangerous, sqlalchemy[asyncio], aiosqlite, openai)
 │   └── app/
-│       ├── main.py       ← create_app: CORS, /api/healthz, router mount
+│       ├── main.py       ← create_app: CORS, /api/healthz, routers, lifespan db init
 │       ├── config.py     ← env-driven settings (no secrets in code)
+│       ├── db.py         ← async engine/session factory, create_schema
+│       ├── models.py     ← Task/Message/Artifact (GUID task ids)
+│       ├── planner.py    ← Gemini via OpenAI-compat endpoint, JSON contract
+│       ├── runner.py     ← simulated sandbox run (asyncio state machine)
 │       ├── session.py    ← signed session cookie create/read/clear
-│       └── routers/auth.py ← Google OAuth: login/callback/me/logout
+│       └── routers/      ← auth.py (Google OAuth) + tasks.py (product API)
 └── web/
     ├── astro.config.mjs
     ├── package.json
     ├── public/
-    │   ├── assets/       ← static brand files (logo SVGs = favicon)
-    │   └── js/auth.js    ← ONLY client JS: nav auth state via /api/auth/me
+    │   ├── assets/       ← static brand files (logo SVGs = favicon) + provider logos
+    │   └── js/           ← ONLY client JS: auth.js (nav/session) + console.js
+    │                       (/app data flow, sanctioned — see rule 8)
     ├── src/
     │   ├── content/      ← ALL copy as JS data (home.js)
     │   ├── layouts/      ← Base.astro: <head>, fonts, global CSS, auth prop
@@ -104,10 +130,14 @@ crosses new architectural ground (database, background workers, websockets),
 7. **The logo mark is sacred.** Defined once in `components/Logo.astro` and as
    static files in `public/assets/`. Never redraw or restyle it elsewhere. See
    "Brand system" below.
-8. **Client-side JS is an explicit exception, not a pattern.** The only
-   sanctioned script is `public/js/auth.js` (nav auth state) plus the gate
-   script in `pages/app.astro`. Both are vanilla, IIFE/scoped, and only call
-   `/api/auth/*`. Any new client JS needs the user's sign-off.
+8. **Client-side JS is an explicit exception, not a pattern.** The sanctioned
+   scripts are `public/js/auth.js` (nav auth state), `public/js/console.js`
+   (/app data flow against `/api/tasks*`), and the gate script in
+   `pages/app.astro`. All are vanilla, IIFE/scoped, and only call `/api/*`.
+   console.js renders into `data-console="*"` hooks in the component shells;
+   **any markup it injects needs `:global()` selectors in the component's
+   `<style>`** — Astro scoping doesn't reach runtime DOM. Any further client
+   JS needs the user's sign-off.
 9. **Backend rules (api/):** routes under `routers/` (one file per domain),
    config only via `config.py`, sessions only via `session.py`. FastAPI docs
    endpoints stay disabled (`docs_url=None`). Cookie values must be
@@ -201,8 +231,18 @@ token/userinfo endpoints mocked (PKCE, state enforcement, session creation,
 tampering rejection):
 
 ```bash
-python3 -m venv /tmp/apitest && /tmp/apitest/bin/pip install -q fastapi httpx itsdangerous uvicorn
+python3 -m venv /tmp/apitest && /tmp/apitest/bin/pip install -q -r api/requirements.txt
 /tmp/apitest/bin/python scripts/test_auth_flow.py
+```
+
+### Testing the product API without credentials
+
+`scripts/test_tasks_flow.py` exercises the full task lifecycle with the
+planner mocked (auth gate → create → chat → plan flips to planned → approve
+→ simulated run to verified → ownership scoping):
+
+```bash
+/tmp/apitest/bin/python scripts/test_tasks_flow.py
 ```
 
 ## Verifying changes (mandatory)
