@@ -1,0 +1,97 @@
+---
+// Console top bar — distinct from the marketing Nav. App context: workspace,
+// search, artifact library shortcut, user. No landing-page anchors.
+import Logo from './Logo.astro';
+import Icon from './Icon.astro';
+---
+<header class="cnav">
+  <div class="cnav-in">
+    <a href="/app" class="brand"><Logo size={26} /><span class="word">Agisphire</span><span class="env mono">console</span></a>
+
+    <div class="cnav-mid">
+      <button class="search mono" title="Search tasks and artifacts (mock)">
+        <Icon name="search" size={14} /> Search tasks, artifacts… <kbd>⌘K</kbd>
+      </button>
+    </div>
+
+    <nav class="cnav-links">
+      <a href="/app" class="active"><Icon name="folder" size={14} /> Tasks</a>
+      <a href="/app/artifacts"><Icon name="library" size={14} /> Artifacts</a>
+    </nav>
+
+    <div class="cnav-user" data-auth="user" data-auth-menu></div>
+  </div>
+</header>
+
+<style>
+  .cnav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 50;
+    background: var(--scrim-nav); backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
+  }
+  .cnav-in {
+    display: flex; align-items: center; gap: 20px;
+    height: 56px; padding: 0 20px; max-width: none;
+  }
+  .brand { display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 15.5px; letter-spacing: -.01em }
+  .env {
+    font-size: 10px; font-weight: 500; color: var(--muted2);
+    border: 1px solid var(--line2); border-radius: 6px; padding: 2px 7px;
+    text-transform: uppercase; letter-spacing: .06em;
+  }
+
+  .cnav-mid { flex: 1; display: flex; justify-content: center }
+  .search {
+    display: inline-flex; align-items: center; gap: 9px; font-size: 12px;
+    background: var(--panel2); border: 1px solid var(--line); border-radius: 9px;
+    color: var(--muted2); padding: 7px 12px; cursor: pointer; width: 300px;
+    font-family: 'Inter', sans-serif; transition: .15s;
+  }
+  .search:hover { border-color: var(--line2); color: var(--muted) }
+  .search kbd { margin-left: auto; font-size: 10px; color: var(--muted2); border: 1px solid var(--line2); border-radius: 4px; padding: 1px 5px; font-family: inherit }
+
+  .cnav-links { display: flex; gap: 4px }
+  .cnav-links a {
+    display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 500;
+    color: var(--muted); padding: 7px 11px; border-radius: 9px; transition: .15s;
+  }
+  .cnav-links a:hover { color: var(--text) }
+  .cnav-links a.active { color: var(--text); background: var(--panel2) }
+
+  .cnav-user { display: flex; align-items: center; min-height: 26px }
+  /* User dropdown (populated by auth.js) */
+  .cnav-user :global(.usermenu) { position: relative }
+  .cnav-user :global(.usermenu-btn) {
+    display: grid; place-items: center; width: 30px; height: 30px;
+    border-radius: 50%; border: 1px solid var(--line2); background: var(--panel2);
+    cursor: pointer; padding: 0; overflow: hidden; transition: .15s;
+  }
+  .cnav-user :global(.usermenu-btn:hover) { border-color: var(--muted2) }
+  .cnav-user :global(.usermenu-btn .nav-avatar) { width: 100%; height: 100%; object-fit: cover }
+  .cnav-user :global(.usermenu-initial) { color: var(--muted); font-size: 13px; font-weight: 600 }
+  .cnav-user :global(.usermenu-pop) {
+    position: absolute; right: 0; top: calc(100% + 8px); min-width: 210px;
+    background: var(--panel2); border: 1px solid var(--line2); border-radius: 12px;
+    padding: 6px; box-shadow: 0 12px 40px var(--shadow, rgba(0, 0, 0, .5)); z-index: 70;
+  }
+  .cnav-user :global(.usermenu-theme) {
+    display: flex; align-items: center; gap: 5px; padding: 7px 11px;
+    border-bottom: 1px solid var(--line); margin-bottom: 5px;
+  }
+  .cnav-user :global(.usermenu-theme-label) { font-size: 12px; color: var(--muted2); margin-right: auto }
+  .cnav-user :global(.usermenu-theme-opt) {
+    font-size: 11.5px; color: var(--muted); background: transparent;
+    border: 1px solid var(--line); border-radius: 7px; padding: 3px 9px; cursor: pointer;
+    font-family: inherit; transition: .15s;
+  }
+  .cnav-user :global(.usermenu-theme-opt:hover) { color: var(--text) }
+  .cnav-user :global(.usermenu-theme-opt.on) { color: var(--accent); border-color: rgba(240, 86, 35, .4) }
+  .cnav-user :global(.usermenu-who) { padding: 9px 11px 10px; border-bottom: 1px solid var(--line); margin-bottom: 5px }
+  .cnav-user :global(.usermenu-name) { font-size: 13px; font-weight: 500; color: var(--text) }
+  .cnav-user :global(.usermenu-email) { font-size: 11.5px; color: var(--muted2); margin-top: 1px }
+  .cnav-user :global(.usermenu-item) {
+    display: block; font-size: 13px; color: var(--muted); padding: 8px 11px;
+    border-radius: 8px; transition: .15s;
+  }
+  .cnav-user :global(.usermenu-item:hover) { background: var(--raised); color: var(--text) }
+</style>

@@ -1,0 +1,74 @@
+---
+// Left rail: task library. Each card shows state pill, provider logo,
+// formats, and check progress. "New task" starts a brainstorm.
+import Icon from './Icon.astro';
+import { tasks, taskStates } from '../content/console.js';
+
+const stateMeta = Object.fromEntries(taskStates.map((s) => [s.id, s]));
+---
+<div class="rail-in">
+  <div class="rail-head">
+    <span class="rail-title"><Icon name="library" size={15} /> Tasks</span>
+    <a href="/app/new" class="new-btn"><Icon name="plus" size={14} /> New task</a>
+  </div>
+
+  <div class="task-list">
+    {tasks.map((t) => (
+      <a href={`/app/tasks/${t.id}`} class={`task ${t.state === 'running' ? 'active' : ''}`}>
+        <div class="t-top">
+          <span class={`state s-${t.state}`}>{stateMeta[t.state].label}</span>
+          {t.provider === 'aws' ? (
+            <picture>
+              <source srcset="/assets/providers/aws-light.svg" media="(prefers-color-scheme: light)" />
+              <img src="/assets/providers/aws.svg" alt="AWS" class="t-prov" />
+            </picture>
+          ) : (
+            <img src={`/assets/providers/${t.provider}.svg`} alt={t.provider} class="t-prov" />
+          )}
+        </div>
+        <div class="t-title">{t.title}</div>
+        <div class="t-meta mono">
+          <span>{t.id}</span> · <span>{t.updated}</span>
+        </div>
+        <div class="t-checks">
+          <span class="bar"><span class="fill" style={`width:${(t.checks.passed / t.checks.total) * 100}%`}></span></span>
+          <span class="mono">{t.checks.passed}/{t.checks.total}</span>
+        </div>
+      </a>
+    ))}
+  </div>
+</div>
+
+<style>
+  .rail-in { padding: 20px 16px; display: flex; flex-direction: column; gap: 16px }
+  .rail-head { display: flex; justify-content: space-between; align-items: center }
+  .rail-title { font-size: 13px; font-weight: 600; color: var(--muted); display: flex; gap: 8px; align-items: center; text-transform: uppercase; letter-spacing: .06em }
+  .new-btn {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 500;
+    background: transparent; color: var(--muted); padding: 6px 11px; border-radius: 9px;
+    border: 1px solid var(--line2); transition: .2s;
+  }
+  .new-btn:hover { color: var(--text); border-color: #57301A }
+
+  .task-list { display: flex; flex-direction: column; gap: 4px }
+  .task {
+    display: block; background: transparent; border: 1px solid transparent;
+    border-radius: 12px; padding: 12px 14px; transition: .15s;
+  }
+  .task:hover { background: var(--panel2) }
+  .task.active { background: var(--panel2); border-color: var(--line) }
+  .t-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px }
+  .t-prov { height: 13px; width: auto; max-width: 22px; border-radius: 3px; display: block; opacity: .9 }
+  .t-title { font-size: 13.5px; font-weight: 500; line-height: 1.4; margin-bottom: 8px }
+  .t-meta { font-size: 11px; color: var(--muted2); margin-bottom: 10px }
+  .t-checks { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted) }
+  .bar { flex: 1; height: 3px; border-radius: 99px; background: var(--line); overflow: hidden }
+  .fill { display: block; height: 100%; background: var(--muted); border-radius: 99px }
+
+  .state { font-size: 10px; font-weight: 500; font-family: 'JetBrains Mono', monospace; padding: 3px 8px; border-radius: 6px; letter-spacing: .04em; color: var(--muted); border: 1px solid var(--line2) }
+  .s-drafting { color: var(--muted2) }
+  .s-planned { color: var(--muted) }
+  .s-running { color: var(--accent); border-color: rgba(240, 86, 35, .35) }
+  .s-verified { color: var(--muted) }
+  .s-delivered { color: var(--muted2) }
+</style>

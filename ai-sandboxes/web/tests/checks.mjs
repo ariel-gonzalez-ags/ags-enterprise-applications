@@ -50,9 +50,17 @@ check('home: auth.js included (Base auth prop)', home.includes('/js/auth.js'));
 check('home: hidden console link for signed-in users', home.includes('data-auth="protected-link"'));
 
 const app = read('app/index.html');
-check('app: protected placeholder renders', app.includes('Your sandbox console'));
+check('app: console three-pane shell', app.includes('TaskRail') || app.includes('task-list'));
+check('app: brainstorm thread renders', app.includes('planner agent'));
+check('app: run inspector renders', app.includes('Target clouds') && app.includes('Idempotent result'));
+check('app: gate overlay present', app.includes('gate-overlay'));
 check('app: gate script calls /api/auth/me', app.includes('/api/auth/me'));
-check('app: login button targets next=/app', app.includes('/api/auth/login?next=/app'));
+check('app: gate has Google sign-in CTA', /\/api\/auth\/login\?next=\/app/.test(app) && app.includes('Sign in with Google'));
+check('app: console nav renders (not marketing nav)', app.includes('Search tasks') && !app.includes('How it works'));
+check('app: provider logos wired', ['/assets/providers/aws.svg', '/assets/providers/azure.svg', '/assets/providers/gcp.svg'].every((p) => app.includes(p)));
+check('app: theme bootstrap present', app.includes('ags-theme') && app.includes('prefers-color-scheme'));
+check('app: light theme tokens emitted', /data-theme=.?light/i.test(app));
+check('app: output formats offered', app.includes('Terraform') && app.includes('PowerShell') && app.includes('Ansible'));
 
 const authJs = read('js/auth.js');
 check('asset: auth.js uses /api/auth/me', authJs.includes('/api/auth/me'));
