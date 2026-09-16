@@ -20,26 +20,17 @@ _SYSTEM = """You are the Agisphire planner agent. Users describe infrastructure
 or ops work; you clarify, then propose an execution plan that will run in an
 ephemeral cloud sandbox with verified results.
 
-Always respond with STRICT JSON, no markdown fences:
-{
-  "reply": "<chat text, concise, plain text with newlines>",
-  "title": "<short task title, <=60 chars, inferred from the conversation>",
-  "plan": null | {
-    "summary": "<1-2 sentence execution plan>",
-    "clouds": ["azure"|"aws"|"gcp"],
-    "deliverables": [{"id": "<terraform|ansible|arm|bash|powershell|markdown>", "why": "<short rationale>"}],
-    "est_hours": <number>
-  }
-}
-
 Rules:
-- Ask clarifying questions while requirements are ambiguous (plan = null).
+- Ask clarifying questions while requirements are ambiguous; in that case set
+  plan to null and use reply for your questions.
 - Propose exactly one plan when you have enough to execute; after that keep
   the same plan unless the user changes scope.
-- Deliverables are what the sandbox run will produce and verify.
+- Deliverables are what the sandbox run will produce and verify. Each id is a
+  short slug (terraform, ansible, arm, bash, powershell, markdown, or a
+  lowercase-dashed custom name); "why" is a short rationale.
 - Prefer idempotent IaC deliverables when the task is provisioning-shaped.
 - Be terse: reply under 80 words, plan summary one sentence, each "why"
-  under 12 words. Total response well under 900 tokens."""
+  under 12 words. Keep reasoning brief so the JSON fits the token budget."""
 
 
 class PlannerUnavailable(Exception):
@@ -57,6 +48,49 @@ def _client(settings: Settings) -> AsyncOpenAI:
 
 def _fallback(reply: str) -> dict:
     return {"reply": reply, "title": None, "plan": None}
+
+
+# Strict output contract, enforced by the model (structured output), not just
+# asked for in prose. Gemini 3.x reasoning models ignore a prose-only format
+# instruction; a JSON schema makes the {reply, title, plan} shape mandatory.
+_PLAN_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "reply": {"type": "string"},
+        "title": {"type": "string"},
+        "plan": {
+            "anyOf": [
+                {"type": "null"},
+                {
+                    "type": "object",
+                    "properties": {
+                        "summary": {"type": "string"},
+                        "clouds": {"type": "array", "items": {"type": "string"}},
+                        "deliverables": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {"type": "string"},
+                                    "why": {"type": "string"},
+                                },
+                                "required": ["id", "why"],
+                            },
+                        },
+                        "est_hours": {"type": "number"},
+                    },
+                    "required": ["summary", "clouds", "deliverables", "est_hours"],
+                },
+            ]
+        },
+    },
+    "required": ["reply", "title", "plan"],
+}
+
+_PLAN_RESPONSE_FORMAT = {
+    "type": "json_schema",
+    "json_schema": {"name": "plan", "schema": _PLAN_SCHEMA},
+}
 
 
 def _context_message(state: dict | None) -> str | None:
@@ -103,8 +137,11 @@ async def reply(settings: Settings, history: list[dict], state: dict | None = No
             model=settings.gemini_model,
             messages=messages,
             temperature=0.3,
-            max_tokens=1400,
-            response_format={"type": "json_object"},
+            # Gemini 3.x is a reasoning model: it spends tokens "thinking"
+            # before the JSON, so the cap must cover reasoning + the reply.
+            # 1400 was tuned for 2.5-flash (no reasoning); 3000 leaves room.
+            max_tokens=3000,
+            response_format=_PLAN_RESPONSE_FORMAT,
         )
         choice = resp.choices[0]
         raw = choice.message.content or ""
@@ -150,7 +187,7 @@ async def normalize_format(settings: Settings, raw: str) -> dict | None:
             model=settings.gemini_model,
             messages=[{"role": "system", "content": _NORM_SYSTEM},
                       {"role": "user", "content": raw}],
-            temperature=0.0, max_tokens=60,
+            temperature=0.0, max_tokens=512,  # reasoning tokens + tiny JSON
             response_format={"type": "json_object"},
         )
         data = json.loads(resp.choices[0].message.content or "")
