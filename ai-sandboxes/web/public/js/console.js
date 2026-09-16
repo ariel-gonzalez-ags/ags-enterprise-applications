@@ -28,11 +28,21 @@
   var CHECK_SVG = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
   var PLUS_SVG = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
 
+  // Display sugar for the canonical catalog (mirrors content/console.js
+  // outputFormats). Unknown ids fall through: label = the raw id, kind =
+  // "custom". The catalog is a preference, not a constraint, so any id the
+  // planner or user supplies still renders.
   var FORMAT_LABELS = {
     terraform: 'Terraform', ansible: 'Ansible', arm: 'ARM / Bicep',
-    bash: 'Bash', powershell: 'PowerShell', markdown: 'Markdown runbook',
+    helm: 'Helm chart', kubernetes: 'Kubernetes manifests', dockerfile: 'Dockerfile',
+    bash: 'Bash', powershell: 'PowerShell', python: 'Python',
+    json: 'JSON policy', yaml: 'YAML config', markdown: 'Markdown runbook',
   };
-  var FORMAT_KINDS = { terraform: 'iac', ansible: 'iac', arm: 'iac', bash: 'script', powershell: 'script', markdown: 'doc' };
+  var FORMAT_KINDS = {
+    terraform: 'iac', ansible: 'iac', arm: 'iac', helm: 'iac', kubernetes: 'iac', dockerfile: 'iac',
+    bash: 'script', powershell: 'script', python: 'script',
+    json: 'config', yaml: 'config', markdown: 'doc',
+  };
   var formatLabel = function (id) { return FORMAT_LABELS[id] || id; };
   var formatKind = function (id) { return FORMAT_KINDS[id] || 'custom'; };
 
@@ -166,11 +176,18 @@
 
   function optRow(id, why, on, editable) {
     var tag = editable ? 'button' : 'div';
+    // The rationale stays collapsed behind an info toggle so the card reads as
+    // compact chips; expanding shows the "why" under the name.
+    var info = why
+      ? '<span class="opt-info" data-info role="button" tabindex="-1" title="Why this deliverable">' +
+        '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg></span>'
+      : '';
     return '<' + tag + ' class="opt' + (on ? ' on' : '') + '" data-format="' + esc(id) + '"' +
       (editable ? ' type="button"' : '') + '>' +
       '<span class="opt-check">' + (on ? CHECK_SVG : '') + '</span>' +
       '<span class="opt-name">' + esc(formatLabel(id)) + ' <span class="opt-kind mono">' + esc(formatKind(id)) + '</span></span>' +
-      '<span class="opt-why">' + esc(why || '') + '</span></' + tag + '>';
+      info +
+      '<span class="opt-why" hidden>' + esc(why || '') + '</span></' + tag + '>';
   }
 
   function planCard(plan, editable) {
@@ -282,6 +299,18 @@
   // Plan card interactions: toggling options / adding a custom deliverable
   // PATCHes the task's accepted format set. Optimistic paint, server truth.
   thread.addEventListener('click', function (e) {
+    // The info toggle expands/collapses the rationale only; it must not flip
+    // the deliverable checkbox or fire the PATCH.
+    var info = e.target.closest('.opt-info');
+    if (info) {
+      var row = info.closest('.opt[data-format]');
+      if (row) {
+        var why = row.querySelector('.opt-why');
+        if (why) why.hidden = !why.hidden;
+        info.classList.toggle('open');
+      }
+      return;
+    }
     var opt = e.target.closest('.choice-card.editable .opt[data-format]');
     if (!opt || opt.tagName !== 'BUTTON') return;
     var on = opt.classList.toggle('on');
@@ -351,7 +380,10 @@
 
   function renderProviders() {
     var provs = provGrid.querySelectorAll('.prov');
-    var current = selected ? selected.provider : (localStorage.getItem('ags-provider') || 'azure');
+    // The picker is always driven by the stored pick, never by the selected
+    // task: otherwise a click updates localStorage but the highlight snaps
+    // back to the task's provider, looking like the click did nothing.
+    var current = localStorage.getItem('ags-provider') || 'azure';
     for (var i = 0; i < provs.length; i++) {
       provs[i].classList.toggle('on', provs[i].getAttribute('data-prov') === current);
     }

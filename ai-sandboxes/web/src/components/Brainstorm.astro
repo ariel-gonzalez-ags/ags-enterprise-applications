@@ -90,9 +90,9 @@ import Icon from './Icon.astro';
   .thread :global(.choice-q) { font-size: 13.5px; color: var(--text); margin-bottom: 12px }
   .thread :global(.choice-opts) { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px }
   .thread :global(.choice-card .opt) {
-    display: flex; align-items: center; gap: 11px; text-align: left;
+    display: flex; align-items: center; flex-wrap: wrap; gap: 8px 11px; text-align: left;
     background: var(--raised); border: 1px solid var(--line2); border-radius: 10px;
-    padding: 10px 12px; width: 100%; color: inherit; font: inherit;
+    padding: 9px 12px; width: 100%; color: inherit; font: inherit;
   }
   .thread :global(.choice-card.editable .opt) { cursor: pointer; transition: .15s }
   .thread :global(.choice-card.editable .opt:hover) { border-color: var(--accent) }
@@ -102,6 +102,20 @@ import Icon from './Icon.astro';
     display: grid; place-items: center; color: var(--accent); flex-shrink: 0;
   }
   .thread :global(.opt:not(.on) .opt-check) { border-color: var(--line2) }
+  /* Info toggle: reveals the rationale inline. Not a checkbox control. */
+  .thread :global(.opt-info) {
+    margin-left: auto; width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0;
+    display: grid; place-items: center; color: var(--muted2); cursor: pointer;
+    transition: .15s;
+  }
+  .thread :global(.opt-info:hover) { color: var(--accent); background: var(--panel) }
+  .thread :global(.opt-info.open) { color: var(--accent) }
+  /* Rationale spans full width under the chip row when revealed. */
+  .thread :global(.opt-why) {
+    flex-basis: 100%; font-size: 12px; color: var(--muted2); line-height: 1.5;
+    padding: 2px 2px 0 27px;  /* align with the name, past the checkbox */
+  }
+  .thread :global(.opt-why[hidden]) { display: none }
   .thread :global(.opt-add) { display: flex; gap: 8px; margin-bottom: 14px }
   .thread :global(.opt-add input) {
     flex: 1; background: var(--panel); border: 1px dashed var(--line2); border-radius: 10px;
@@ -115,7 +129,6 @@ import Icon from './Icon.astro';
   .thread :global(.opt-add button:hover) { border-color: var(--accent); color: var(--accent) }
   .thread :global(.opt-name) { font-size: 13px; font-weight: 500; color: var(--text); display: flex; align-items: baseline; gap: 7px; text-transform: capitalize }
   .thread :global(.opt-kind) { font-size: 9px; color: var(--muted2); text-transform: uppercase; letter-spacing: .05em }
-  .thread :global(.opt-why) { margin-left: auto; font-size: 11.5px; color: var(--muted2) }
   .thread :global(.choice-foot) { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid var(--line); padding-top: 12px }
   .thread :global(.choice-hint) { font-size: 11px; color: var(--muted2); line-height: 1.45; max-width: 320px }
   .thread :global(.choice-meta) { font-size: 11px; color: var(--muted); font-family: 'JetBrains Mono', monospace }
