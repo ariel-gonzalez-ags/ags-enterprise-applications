@@ -34,6 +34,17 @@ import { providers } from '../content/console.js';
   </div>
 </div>
 
+<div class="confirm" data-console="confirm" hidden>
+  <div class="confirm-box">
+    <p class="confirm-title" data-console="confirm-title">Delete task?</p>
+    <p class="confirm-body" data-console="confirm-body"></p>
+    <div class="confirm-actions">
+      <button class="confirm-cancel" data-console="confirm-cancel" type="button">Cancel</button>
+      <button class="confirm-go" data-console="confirm-go" type="button">Delete</button>
+    </div>
+  </div>
+</div>
+
 <style>
   .rail-in { padding: 20px 16px; display: flex; flex-direction: column; gap: 16px }
   .rail-head { display: flex; justify-content: space-between; align-items: center }
@@ -89,4 +100,24 @@ import { providers } from '../content/console.js';
   .task-list :global(.s-running) { color: var(--accent); border-color: rgba(240, 86, 35, .35) }
   .task-list :global(.s-verified) { color: var(--muted) }
   .task-list :global(.s-delivered) { color: var(--muted2) }
+
+  .confirm { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 70; display: grid; place-items: center; padding: 24px }
+  .confirm[hidden] { display: none }
+  .confirm-box {
+    background: var(--panel); border: 1px solid var(--line2); border-radius: 14px;
+    width: min(400px, 100%); padding: 22px;
+  }
+  .confirm-title { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 8px }
+  .confirm-body { font-size: 13px; color: var(--muted); line-height: 1.55; margin-bottom: 20px }
+  .confirm-actions { display: flex; justify-content: flex-end; gap: 10px }
+  .confirm-cancel {
+    font-size: 13px; font-weight: 500; padding: 8px 16px; border-radius: 9px;
+    background: transparent; border: 1px solid var(--line2); color: var(--muted); cursor: pointer; transition: .15s;
+  }
+  .confirm-cancel:hover { color: var(--text); background: var(--raised) }
+  .confirm-go {
+    font-size: 13px; font-weight: 600; padding: 8px 16px; border-radius: 9px;
+    background: var(--accent); border: none; color: var(--on-accent); cursor: pointer; transition: .15s;
+  }
+  .confirm-go:hover { filter: brightness(1.1) }
 </style>

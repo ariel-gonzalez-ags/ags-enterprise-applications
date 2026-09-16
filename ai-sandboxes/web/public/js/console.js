@@ -84,6 +84,24 @@
 
   var TRASH_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
 
+  /* ---------- confirm modal (design-system, not window.confirm) ---------- */
+
+  var confirmEl = document.querySelector('[data-console="confirm"]');
+  var confirmBody = document.querySelector('[data-console="confirm-body"]');
+  var confirmGo = document.querySelector('[data-console="confirm-go"]');
+  var confirmCancel = document.querySelector('[data-console="confirm-cancel"]');
+  var confirmCb = null;
+
+  function askConfirm(body, onYes) {
+    confirmBody.textContent = body;
+    confirmCb = onYes;
+    confirmEl.hidden = false;
+  }
+  function closeConfirm() { confirmEl.hidden = true; confirmCb = null; }
+  confirmGo.addEventListener('click', function () { var cb = confirmCb; closeConfirm(); if (cb) cb(); });
+  confirmCancel.addEventListener('click', closeConfirm);
+  confirmEl.addEventListener('click', function (e) { if (e.target === confirmEl) closeConfirm(); });
+
   /* ---------- rail ---------- */
 
   function renderRail() {
@@ -113,16 +131,19 @@
     if (del) {
       e.stopPropagation();
       var id = del.getAttribute('data-del');
-      // Verified runs delivered artifacts: confirm before wiping the record.
-      // Drafts/planned (incl. untouched "Untitled task") delete immediately.
-      if (del.getAttribute('data-state') === 'verified' &&
-          !window.confirm('Delete this verified task? Its artifacts and evidence will be permanently removed.')) {
-        return;
+      var doDelete = function () {
+        api('/api/tasks/' + encodeURIComponent(id), { method: 'DELETE' }).then(function () {
+          if (selectedId === id) { selected = null; selectedId = null; renderAll(); }
+          refreshList();
+        }).catch(function () { refreshList(); });
+      };
+      // Verified runs delivered artifacts: confirm first. Drafts/planned
+      // (incl. untouched "Untitled task") delete immediately.
+      if (del.getAttribute('data-state') === 'verified') {
+        askConfirm('This verified task and its artifacts and evidence will be permanently removed.', doDelete);
+      } else {
+        doDelete();
       }
-      api('/api/tasks/' + encodeURIComponent(id), { method: 'DELETE' }).then(function () {
-        if (selectedId === id) { selected = null; selectedId = null; renderAll(); }
-        refreshList();
-      }).catch(function () { refreshList(); });
       return;
     }
     var card = e.target.closest('[data-task-id]');
