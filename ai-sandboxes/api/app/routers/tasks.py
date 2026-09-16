@@ -201,6 +201,8 @@ async def task_events(task_id: str, request: Request, user: dict = Depends(_user
                 if await request.is_disconnected():
                     break
         except asyncio.CancelledError:
+            # Client disconnected mid-stream; the finally block in
+            # events.subscribe() cleans up the subscription.
             pass
 
     return StreamingResponse(gen(), media_type="text/event-stream", headers={

@@ -21,6 +21,7 @@ def publish(task_id: str) -> None:
         try:
             q.put_nowait({"changed": True})
         except asyncio.QueueFull:
+            # Slow consumer: drop the nudge; it re-syncs on the next event.
             pass
 
 

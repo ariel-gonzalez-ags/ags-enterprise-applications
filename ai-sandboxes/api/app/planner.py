@@ -108,10 +108,12 @@ def _context_message(state: dict | None) -> str | None:
         f"- Idempotent result: {'yes' if state.get('idempotent') else 'no'}",
         f"- Destroy sandbox after handover: {'yes' if state.get('destroy_after') else 'no'}",
         f"- Max sandbox hours: {state.get('max_hours', 4)}",
-        "When you propose or revise a plan, the deliverables list MUST match "
-        "the accepted deliverables above exactly (same ids, no more, no "
-        "fewer), and clouds must be the target cloud. Do not re-add "
-        "deliverables the user removed.",
+        (
+            "When you propose or revise a plan, the deliverables list MUST "
+            "match the accepted deliverables above exactly (same ids, no "
+            "more, no fewer), and clouds must be the target cloud. Do not "
+            "re-add deliverables the user removed."
+        ),
     ]
     return "\n".join(lines)
 
