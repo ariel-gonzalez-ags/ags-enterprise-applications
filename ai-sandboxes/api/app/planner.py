@@ -16,6 +16,16 @@ from .config import Settings
 
 _BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 
+# Canonical deliverable ids the planner should PREFER. Mirrors the web catalog
+# (web/src/content/console.js outputFormats) and the runner's known files.
+# This is a preference, not a constraint: the user can always add a custom
+# deliverable, and normalize_format resolves free-text to a real file. So the
+# schema keeps `id` a free string (no enum); the prompt steers toward these.
+CANONICAL_FORMATS = [
+    "terraform", "ansible", "arm", "helm", "kubernetes", "dockerfile",
+    "bash", "powershell", "python", "json", "yaml", "markdown",
+]
+
 _SYSTEM = """You are the Agisphire planner agent. Users describe infrastructure
 or ops work; you clarify, then propose an execution plan that will run in an
 ephemeral cloud sandbox with verified results.
@@ -26,8 +36,11 @@ Rules:
 - Propose exactly one plan when you have enough to execute; after that keep
   the same plan unless the user changes scope.
 - Deliverables are what the sandbox run will produce and verify. Each id is a
-  short slug (terraform, ansible, arm, bash, powershell, markdown, or a
-  lowercase-dashed custom name); "why" is a short rationale.
+  short slug; "why" is a short rationale.
+- STRONGLY prefer a canonical deliverable id when one fits: """ + ", ".join(CANONICAL_FORMATS) + """.
+  Use these exact ids (all lowercase, e.g. terraform, markdown), not variants
+  like Terraform_code or Markdown_runbook. Only invent a new lowercase-dashed
+  slug when no canonical id fits the request.
 - Prefer idempotent IaC deliverables when the task is provisioning-shaped.
 - Be terse: reply under 80 words, plan summary one sentence, each "why"
   under 12 words. Keep reasoning brief so the JSON fits the token budget."""
@@ -111,7 +124,8 @@ def _context_message(state: dict | None) -> str | None:
     truth for deliverables/cloud/guarantees."""
     if not state:
         return None
-    fmts = ", ".join(state.get("formats") or []) or "none chosen"
+    fmts_list = state.get("formats") or []
+    fmts = ", ".join(fmts_list) or "none chosen"
     lines = [
         "Current task settings the user has already chosen (treat as fixed):",
         f"- Accepted deliverables: {fmts}",
@@ -119,13 +133,25 @@ def _context_message(state: dict | None) -> str | None:
         f"- Idempotent result: {'yes' if state.get('idempotent') else 'no'}",
         f"- Destroy sandbox after handover: {'yes' if state.get('destroy_after') else 'no'}",
         f"- Max sandbox hours: {state.get('max_hours', 4)}",
-        (
+    ]
+    if fmts_list:
+        # The user has toggled/added deliverables: that set is the source of
+        # truth, so re-planning must not re-add removed items.
+        lines.append(
             "When you propose or revise a plan, the deliverables list MUST "
             "match the accepted deliverables above exactly (same ids, no "
             "more, no fewer), and clouds must be the target cloud. Do not "
             "re-add deliverables the user removed."
-        ),
-    ]
+        )
+    else:
+        # Nothing chosen yet (a fresh task): the planner seeds the set, so the
+        # match-exactly rule would wrongly forbid it from proposing anything.
+        lines.append(
+            "No deliverables are chosen yet. When you propose a plan, YOU "
+            "choose the sensible deliverable set for the task (e.g. terraform, "
+            "markdown runbook). Never return an empty deliverables list for an "
+            "executable task."
+        )
     return "\n".join(lines)
 
 
@@ -178,11 +204,35 @@ async def reply(settings: Settings, history: list[dict], state: dict | None = No
     plan = data.get("plan")
     if not isinstance(plan, dict):
         plan = None
+    elif isinstance(plan.get("deliverables"), list):
+        # Canonicalize ids: near-misses (Markdown_runbook, Terraform_code)
+        # snap to the catalog so the UI labels them and the runner names the
+        # file right. Genuine customs (helm-of-xyz) pass through untouched.
+        for d in plan["deliverables"]:
+            if isinstance(d, dict) and isinstance(d.get("id"), str):
+                d["id"] = _canonical_id(d["id"])
     return {
         "reply": data["reply"],
         "title": data.get("title") if isinstance(data.get("title"), str) else None,
         "plan": plan,
     }
+
+
+def _canonical_id(raw: str) -> str:
+    """Snap a near-miss deliverable id to the canonical catalog. Lowercases,
+    treats _ and - as equivalent, and matches when the id IS a catalog id,
+    STARTS with one (terraform_code -> terraform), or a catalog id appears as
+    a token (markdown_runbook -> markdown). Anything else is a real custom id
+    and is returned slugged, unchanged in spirit."""
+    s = raw.strip().lower().replace("_", "-")
+    s = "-".join(p for p in s.split("-") if p)
+    if s in CANONICAL_FORMATS:
+        return s
+    for canon in CANONICAL_FORMATS:
+        if s == canon or s.startswith(canon + "-") or s.endswith("-" + canon) \
+                or ("-" + canon + "-") in ("-" + s + "-"):
+            return canon
+    return s
 
 
 _NORM_SYSTEM = """You normalize a free-text deliverable request into a file.

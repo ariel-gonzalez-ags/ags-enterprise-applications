@@ -16,10 +16,15 @@ _FORMAT_FILES = {
     "terraform": ("main.tf", "8.2 KB", "winning configuration, fully idempotent"),
     "ansible": ("harden.yml", "5.7 KB", "idempotent playbook, check-mode clean"),
     "arm": ("main.bicep", "4.3 KB", "compiled clean, what-if empty"),
+    "helm": ("chart.tgz", "9.6 KB", "lint clean, template renders"),
+    "kubernetes": ("manifests.yaml", "6.8 KB", "validated, dry-run apply clean"),
+    "dockerfile": ("Dockerfile", "1.8 KB", "multi-stage, hadolint clean"),
     "bash": ("setup.sh", "2.1 KB", "set -euo pipefail, rerunnable"),
     "powershell": ("Setup.ps1", "2.4 KB", "idempotent, supports -WhatIf"),
-    "markdown": ("runbook.md", "6.4 KB", "what ran, evidence, how to re-verify"),
+    "python": ("run.py", "3.3 KB", "typed, idempotent, exit-coded"),
     "json": ("policy.json", "3.1 KB", "definition + assignment, validated"),
+    "yaml": ("config.yaml", "2.7 KB", "schema-validated"),
+    "markdown": ("runbook.md", "6.4 KB", "what ran, evidence, how to re-verify"),
 }
 _ALWAYS = [("verify.sh", "bash", "0.9 KB", "rerun the acceptance checks anywhere")]
 

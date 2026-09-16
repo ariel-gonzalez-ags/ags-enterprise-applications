@@ -32,8 +32,16 @@ the user before implementing**. See "Evolution path".
 - **Astro 7**, static output. Zero JavaScript ships to the browser beyond
   `public/js/auth.js`. Note: Astro 7 minifies inlined CSS (lowercase hex,
   no spaces): smoke tests must match tolerantly, not by exact bytes.
-  Astro 7 also **drops elements with `style="display:none"`** at build
-  time, use the `hidden` attribute instead (gate overlay in ConsoleShell).
+   Astro 7 also **drops elements with `style="display:none"`** at build
+   time, use the `hidden` attribute instead (gate overlay in ConsoleShell).
+   **Inline `<script>` bodies get quote-normalized to backticks** by the
+   bundler: smoke tests that assert on script contents must match with a
+   `['`]` character class, not an exact single-quoted string.
+   The sign-in screen is a dedicated page (`pages/login.astro`, copy in
+   `content/home.js` `login`): anonymous `/app` visitors are redirected
+   there by the gate script, and signed-in visitors to `/login` are bounced
+   back to `/app`. The `#gate` overlay in ConsoleShell is now only a no-JS
+   fallback linking to `/login`.
 - **No UI framework** (no React/Vue). Components are `.astro` files.
 - **No CSS framework** (no Tailwind). Hand-written CSS custom properties
   ("tokens") in `web/src/styles/`.
@@ -107,7 +115,7 @@ the user before implementing**. See "Evolution path".
     │   ├── layouts/      ← Base.astro: <head>, fonts, global CSS, auth prop
     │   ├── styles/       ← tokens.css.astro (palette) + base.css.astro (primitives)
     │   ├── components/   ← one UI section per file, scoped styles
-    │   └── pages/        ← index.astro + app.astro (composition only)
+    │   └── pages/        ← index.astro + app.astro + login.astro (composition only)
     └── tests/checks.mjs  ← smoke tests against web/dist output
 ```
 
@@ -130,10 +138,11 @@ the user before implementing**. See "Evolution path".
 7. **The logo mark is sacred.** Defined once in `components/Logo.astro` and as
    static files in `public/assets/`. Never redraw or restyle it elsewhere. See
    "Brand system" below.
-8. **Client-side JS is an explicit exception, not a pattern.** The sanctioned
+ 8. **Client-side JS is an explicit exception, not a pattern.** The sanctioned
    scripts are `public/js/auth.js` (nav auth state), `public/js/console.js`
-   (/app data flow against `/api/tasks*`), and the gate script in
-   `pages/app.astro`. All are vanilla, IIFE/scoped, and only call `/api/*`.
+   (/app data flow against `/api/tasks*`), the gate script in
+   `pages/app.astro`, and the signed-in bounce in `pages/login.astro`. All
+   are vanilla, IIFE/scoped, and only call `/api/*`.
    console.js renders into `data-console="*"` hooks in the component shells;
    **any markup it injects needs `:global()` selectors in the component's
    `<style>`**: Astro scoping doesn't reach runtime DOM. Any further client
@@ -241,6 +250,29 @@ respects the plan-card toggles instead of reverting to a prior plan. The
 `gemini-3.6-flash`); the picker is data-driven from `GET /api/models`, so
 adding a model (or another provider later) is a list edit, not new routes.
 
+**Deliverable ids come from a canonical catalog, but custom is always open.**
+The catalog (`web/src/content/console.js` `outputFormats`, mirrored by
+`planner.CANONICAL_FORMATS` and `runner._FORMAT_FILES`) is the vocabulary the
+planner PREFERS when proposing a plan. It is a preference, not a constraint:
+the schema keeps `id` a free string (no enum), and a user-added custom
+deliverable is resolved to a real file by `planner.normalize_format`. Because
+prompt-steering alone is unreliable (the model emitted `Terraform_code`,
+`markdown_runbook`), `planner._canonical_id` snaps near-miss ids to the
+catalog after the model responds (underscores/case-insensitive, prefix/token
+match) while leaving genuine customs (opa-gatekeeper-policy) untouched. The
+catalog drives chip labels/kinds and artifact filenames; adding a known
+format is a data edit in `outputFormats` + a filename in `_FORMAT_FILES`.
+
+**The match-exactly rule only applies once the user has chosen deliverables.**
+`_context_message` branches on `state.formats`: when it is non-empty, the
+planner is told the deliverables list MUST match that set exactly (so toggles
+stick); when it is empty (a fresh task), the planner is instead told to propose
+the sensible set and never return an empty list. Enforcing "match exactly"
+against an empty set made every first plan come back with `deliverables: []`
+(the planner obeyed, seeded nothing, and stayed stuck), which surfaced in the
+UI as a plan card with no Terraform/Ansible/Markdown chips. Keep the empty-set
+branch permissive.
+
 **Output is enforced by JSON schema, not prose.** Gemini 3.x are reasoning
 models that ignore a prose-only format instruction; `planner` sends
 `_PLAN_RESPONSE_FORMAT` (a `json_schema`) so the `{reply, title, plan}`
@@ -252,6 +284,15 @@ buffer the whole reply (no incremental token stream), so `console.js`
 reveals the newest agent reply progressively (faux-typing) after it lands.
 The effect is independent of which model produced the text; the plan card
 pops in once the text finishes (structured JSON cannot render half-formed).
+
+**Plan-card UI conventions in console.js.** Two things that are easy to get
+wrong: (1) the New-task target-cloud highlight is driven only by the stored
+pick (`localStorage` `ags-provider`), never by the selected task's provider,
+otherwise the highlight snaps back to the task and the click looks dead. (2)
+Each plan-card deliverable chip keeps its "why" rationale collapsed behind an
+`.opt-info` toggle so the card stays compact; that toggle must not flip the
+checkbox or fire the PATCH (the thread click handler returns early on
+`.opt-info`).
 
 All gated by the session cookie, scoped to `owner_sub` (404 across owners,
 not 403, don't leak existence). Task JSON shape: `{id (GUID), title, state,
