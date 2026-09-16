@@ -92,6 +92,7 @@ the user before implementing**. See "Evolution path".
 │       ├── models.py     ← Task/Message/Artifact (GUID task ids)
 │       ├── planner.py    ← Gemini via OpenAI-compat endpoint, JSON contract
 │       ├── runner.py     ← simulated sandbox run (asyncio state machine)
+│       ├── events.py     ← in-process pub/sub bus for SSE task updates
 │       ├── session.py    ← signed session cookie create/read/clear
 │       └── routers/      ← auth.py (Google OAuth) + tasks.py (product API)
 └── web/
@@ -215,13 +216,25 @@ that. Marketing pages stay prerendered (static) regardless.
 | `DELETE /api/tasks/{id}` | 204; drafting/planned only. running/verified/delivered are records: 409 |
 | `POST /api/tasks/{id}/approve` | `planned` → `running`, spawns the simulated run |
 | `GET /api/tasks/{id}/artifacts/{filename}` | artifact contents, owner-scoped; `Content-Disposition: attachment`, `no-store` |
+| `GET /api/tasks/{id}/events` | SSE stream; one `{"changed": true}` nudge per state change, owner-scoped |
 
 **Chat and runs are asynchronous by design.** The POST never waits on the
-LLM; it sets `agent_pending` and returns. Clients poll `GET /tasks/{id}`:
-`agent_pending: true` means a reply is coming, `state: running` means the
-sandbox is working. This decouples LLM latency and (eventually) multi-hour
-sandbox runs from any HTTP request. Don't reintroduce synchronous planner
-calls; if you need streaming, add SSE/websockets on top of this contract.
+LLM; it sets `agent_pending` and returns. Live updates flow over SSE: the
+console opens `GET /tasks/{id}/events` (an in-process pub/sub bus in
+`app/events.py`) while a task is live (`running` or `agent_pending`) and
+re-fetches the task on each `{"changed": true}` nudge. The nudge carries no
+payload, so the stream can never drift from the DB; the planner and runner
+call `events.publish(task_id)` after each commit. If SSE is unavailable or
+drops, the client falls back to polling `GET /tasks/{id}` every 3s. This
+decouples LLM latency and (eventually) multi-hour sandbox runs from any
+HTTP request. Don't reintroduce synchronous planner calls. The bus is
+single-node (one dict of asyncio queues); a multi-node swap means replacing
+it with Redis pub/sub behind the same interface.
+
+**The planner sees the task's current settings.** `planner.reply(settings,
+history, state)` injects a context message with the accepted deliverables,
+target cloud, and idempotent/destroy/max-hours values, so re-planning
+respects the plan-card toggles instead of reverting to a prior plan.
 
 All gated by the session cookie, scoped to `owner_sub` (404 across owners,
 not 403, don't leak existence). Task JSON shape: `{id (GUID), title, state,
@@ -244,10 +257,13 @@ Operational gotchas:
   like `/app` → `/app/` carry the container port (8080) and browsers hit
   connection-refused, because the host maps 8090→8080. Never re-enable
   absolute redirects while behind a port mapping.
-- nginx `proxy_read_timeout` is 120s on `/api/` because planner chat waits
-  on an LLM round-trip. The planner client self-caps at 90s (one retry) so
-  the worst case is an in-chat degradation message, not a 504. If you lower
-  the nginx value, lower the planner's first.
+- nginx `proxy_read_timeout` is 300s on `/api/` and `proxy_buffering` is
+  off there: the SSE stream (`/tasks/{id}/events`) is long-lived and must
+  not be buffered, and planner chat waits on an LLM round-trip. The planner
+  client self-caps at 90s (one retry) so the worst case is an in-chat
+  degradation message, not a 504. The app also sends `X-Accel-Buffering:
+  no` on the stream. If you lower the nginx timeout, lower the planner's
+  first.
 
 ## Workflow
 
