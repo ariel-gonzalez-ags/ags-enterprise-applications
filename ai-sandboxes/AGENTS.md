@@ -123,7 +123,8 @@ crosses new architectural ground (database, background workers, websockets),
 - **A**: single evenodd path `M50 29 L67 70 L55.5 70 L53 61.5 L47 61.5 L44.5
   70 L33 70 Z M50 43 L53.8 54 L46.2 54 Z` — the open counter is what keeps it
   legible at 16px. Never fill it.
-- **Colors**: A is `#F2EDE8` on dark, `#060504` on light (`<Logo light />`).
+- **Colors**: A fills with `currentColor` by default (follows the active
+  theme), `#060504` when forced light (`<Logo light />`).
   The ring is always ember — never recolor it, never add a background disc.
 - **Clear space** = one arc-cap width on all sides.
 

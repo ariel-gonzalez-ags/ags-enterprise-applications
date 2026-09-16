@@ -17,7 +17,14 @@ const stateMeta = Object.fromEntries(taskStates.map((s) => [s.id, s]));
       <a href={`/app/tasks/${t.id}`} class={`task ${t.state === 'running' ? 'active' : ''}`}>
         <div class="t-top">
           <span class={`state s-${t.state}`}>{stateMeta[t.state].label}</span>
-          <img src={`/assets/providers/${t.provider}.svg`} alt={t.provider} class="t-prov" />
+          {t.provider === 'aws' ? (
+            <picture>
+              <source srcset="/assets/providers/aws-light.svg" media="(prefers-color-scheme: light)" />
+              <img src="/assets/providers/aws.svg" alt="AWS" class="t-prov" />
+            </picture>
+          ) : (
+            <img src={`/assets/providers/${t.provider}.svg`} alt={t.provider} class="t-prov" />
+          )}
         </div>
         <div class="t-title">{t.title}</div>
         <div class="t-meta mono">

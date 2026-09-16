@@ -1,14 +1,15 @@
 ---
 // The Agisphire mark (C4g-6 twin-arc ring + A1 counter A), as an inline SVG so
-// it inherits layout and works without a request. Light variant swaps the A to
-// dark ink; the ring stays ember on any background.
+// it inherits layout and works without a request. The A fills with
+// currentColor by default so it follows the theme; `light` forces dark ink.
+// The ring stays ember on any background.
 interface Props {
   size?: number;
   light?: boolean;   // render for light backgrounds (A in --bg ink)
   class?: string;
 }
 const { size = 48, light = false, class: cls = '' } = Astro.props;
-const aFill = light ? '#060504' : '#F2EDE8';
+const aFill = light ? '#060504' : 'currentColor';
 ---
 <svg
   viewBox="0 0 100 100"

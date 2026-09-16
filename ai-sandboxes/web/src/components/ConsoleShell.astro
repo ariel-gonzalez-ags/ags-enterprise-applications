@@ -40,7 +40,7 @@ import ConsoleNav from './ConsoleNav.astro';
 
   .gate-overlay {
     position: fixed; inset: 0; z-index: 60; display: grid; place-items: center;
-    background: rgba(6, 5, 4, .88); backdrop-filter: blur(8px);
+    background: var(--scrim); backdrop-filter: blur(8px);
   }
   .gate-overlay[hidden] { display: none }
   .gate-card {

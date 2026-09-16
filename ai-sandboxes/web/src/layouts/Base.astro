@@ -24,6 +24,17 @@ const { title, description = 'AI-executed cloud work, sandbox-tested and deliver
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <Tokens />
   <Base />
+  <script is:inline>
+    // Theme bootstrap — runs before first paint to avoid a theme flash.
+    // 'system' (default) follows the OS; explicit choice persists in localStorage.
+    (function () {
+      var saved = null;
+      try { saved = localStorage.getItem('ags-theme') } catch (e) {}
+      var mode = saved || 'system';
+      var dark = mode === 'dark' || (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    })();
+  </script>
   {auth && <script src="/js/auth.js" defer></script>}
 </head>
 <body>

@@ -26,7 +26,7 @@ import Icon from './Icon.astro';
 <style>
   .cnav {
     position: fixed; top: 0; left: 0; right: 0; z-index: 50;
-    background: rgba(7, 6, 5, .9); backdrop-filter: blur(10px);
+    background: var(--scrim-nav); backdrop-filter: blur(10px);
     border-bottom: 1px solid var(--line);
   }
   .cnav-in {
@@ -70,10 +70,22 @@ import Icon from './Icon.astro';
   .cnav-user :global(.usermenu-btn .nav-avatar) { width: 100%; height: 100%; object-fit: cover }
   .cnav-user :global(.usermenu-initial) { color: var(--muted); font-size: 13px; font-weight: 600 }
   .cnav-user :global(.usermenu-pop) {
-    position: absolute; right: 0; top: calc(100% + 8px); min-width: 200px;
+    position: absolute; right: 0; top: calc(100% + 8px); min-width: 210px;
     background: var(--panel2); border: 1px solid var(--line2); border-radius: 12px;
-    padding: 6px; box-shadow: 0 12px 40px rgba(0, 0, 0, .5); z-index: 70;
+    padding: 6px; box-shadow: 0 12px 40px var(--shadow, rgba(0, 0, 0, .5)); z-index: 70;
   }
+  .cnav-user :global(.usermenu-theme) {
+    display: flex; align-items: center; gap: 5px; padding: 7px 11px;
+    border-bottom: 1px solid var(--line); margin-bottom: 5px;
+  }
+  .cnav-user :global(.usermenu-theme-label) { font-size: 12px; color: var(--muted2); margin-right: auto }
+  .cnav-user :global(.usermenu-theme-opt) {
+    font-size: 11.5px; color: var(--muted); background: transparent;
+    border: 1px solid var(--line); border-radius: 7px; padding: 3px 9px; cursor: pointer;
+    font-family: inherit; transition: .15s;
+  }
+  .cnav-user :global(.usermenu-theme-opt:hover) { color: var(--text) }
+  .cnav-user :global(.usermenu-theme-opt.on) { color: var(--accent); border-color: rgba(240, 86, 35, .4) }
   .cnav-user :global(.usermenu-who) { padding: 9px 11px 10px; border-bottom: 1px solid var(--line); margin-bottom: 5px }
   .cnav-user :global(.usermenu-name) { font-size: 13px; font-weight: 500; color: var(--text) }
   .cnav-user :global(.usermenu-email) { font-size: 11.5px; color: var(--muted2); margin-top: 1px }

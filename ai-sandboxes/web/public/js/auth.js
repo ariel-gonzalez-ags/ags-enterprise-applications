@@ -59,6 +59,44 @@
       out.textContent = 'Sign out';
 
       menu.appendChild(who);
+
+      // Theme: system / light / dark — persists in localStorage, bootstrap
+      // in Base.astro reads it before first paint.
+      var themeBox = document.createElement('div');
+      themeBox.className = 'usermenu-theme';
+      var tLabel = document.createElement('span');
+      tLabel.className = 'usermenu-theme-label';
+      tLabel.textContent = 'Theme';
+      themeBox.appendChild(tLabel);
+      ['system', 'light', 'dark'].forEach(function (mode) {
+        var b = document.createElement('button');
+        b.className = 'usermenu-theme-opt';
+        b.textContent = mode.charAt(0).toUpperCase() + mode.slice(1);
+        b.dataset.themeMode = mode;
+        b.addEventListener('click', function (e) {
+          e.stopPropagation();
+          try { localStorage.setItem('ags-theme', mode) } catch (err) {}
+          var dark = mode === 'dark' || (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+          markTheme();
+        });
+        themeBox.appendChild(b);
+      });
+      menu.appendChild(themeBox);
+      function markTheme() {
+        var cur = null;
+        try { cur = localStorage.getItem('ags-theme') } catch (err) {}
+        themeBox.querySelectorAll('.usermenu-theme-opt').forEach(function (b) {
+          b.classList.toggle('on', b.dataset.themeMode === (cur || 'system'));
+        });
+      }
+      markTheme();
+
+      var out = document.createElement('a');
+      out.className = 'usermenu-item';
+      out.href = LOGOUT_URL;
+      out.textContent = 'Sign out';
+
       menu.appendChild(out);
       wrap.appendChild(btn);
       wrap.appendChild(menu);

@@ -11,7 +11,15 @@ import { providers, defaultRunConfig, artifacts } from '../content/console.js';
     <div class="prov-grid">
       {providers.map((p) => (
         <button class={`prov ${defaultRunConfig.providers.includes(p.id) ? 'on' : ''}`}>
-          <img src={`/assets/providers/${p.id}.svg`} alt={p.name} class="prov-icon" /> {p.name}
+          {p.id === 'aws' ? (
+            <picture>
+              <source srcset="/assets/providers/aws-light.svg" media="(prefers-color-scheme: light)" />
+              <img src="/assets/providers/aws.svg" alt="AWS" class="prov-icon" />
+            </picture>
+          ) : (
+            <img src={`/assets/providers/${p.id}.svg`} alt={p.name} class="prov-icon" />
+          )}
+          {p.name}
         </button>
       ))}
     </div>
@@ -91,7 +99,7 @@ import { providers, defaultRunConfig, artifacts } from '../content/console.js';
   .toggle { width: 34px; height: 20px; border-radius: 99px; background: var(--line2); position: relative; flex-shrink: 0; cursor: pointer; transition: .2s }
   .toggle .knob { position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: var(--muted); transition: .2s }
   .toggle.on { background: var(--accent) }
-  .toggle.on .knob { left: 17px; background: #160802 }
+  .toggle.on .knob { left: 17px; background: var(--on-accent) }
 
   .art-list { display: flex; flex-direction: column; gap: 8px }
   .art { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px }
