@@ -1,4 +1,4 @@
-"""Product API — tasks, brainstorm messages, plan approval. All routes are
+"""Product API: tasks, brainstorm messages, plan approval. All routes are
 gated by the signed session cookie and scoped to the owning user."""
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field

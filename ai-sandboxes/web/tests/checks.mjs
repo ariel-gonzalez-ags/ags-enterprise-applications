@@ -1,5 +1,5 @@
 // Smoke tests for the built site. Run: node tests/checks.mjs
-// These run inside the Docker build (see ../../Dockerfile) — a failing check
+// These run inside the Docker build (see ../../Dockerfile): a failing check
 // fails the image build, so nothing broken can ship.
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -37,7 +37,7 @@ check('home: demo section', home.includes('id="demo"') && home.includes('CIS Lev
 check('home: features section', home.includes('id="features"') && home.includes('True isolation'));
 check('home: stats section', home.includes('median request') && home.includes('4,320'));
 check('home: CTA section', home.includes('id="cta"') && home.includes('Ship the work'));
-check('home: footer note', home.includes('concept mockup'));
+check('home: footer note', home.toLowerCase().includes('concept mockup'));
 // Astro may minify/lowercase inlined CSS differently across versions —
 // match tokens tolerantly rather than asserting an exact byte sequence.
 check('home: design tokens inlined', /--accent\s*:\s*#f05623/i.test(home));

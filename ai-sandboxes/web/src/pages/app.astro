@@ -1,12 +1,12 @@
 ---
-// /app — the console. Library (left) · brainstorm/run (center) · config (right).
+// /app: the console. Library (left) · brainstorm/run (center) · config (right).
 // Gate: auth.js checks /api/auth/me; anonymous users get the sign-in prompt.
 import ConsoleShell from '../components/ConsoleShell.astro';
 import TaskRail from '../components/TaskRail.astro';
 import Brainstorm from '../components/Brainstorm.astro';
 import RunInspector from '../components/RunInspector.astro';
 ---
-<ConsoleShell title="Agisphire — Console">
+<ConsoleShell title="Agisphire: Console">
   <TaskRail slot="rail" />
   <Brainstorm slot="stage" />
   <RunInspector slot="inspector" />

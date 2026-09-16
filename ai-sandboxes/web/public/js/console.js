@@ -1,4 +1,4 @@
-/* console.js — wires the /app shells to /api/tasks*. Vanilla IIFE, no
+/* console.js: wires the /app shells to /api/tasks*. Vanilla IIFE, no
  * framework, same discipline as auth.js. Runs only on /app (the page
  * includes it); it no-ops anywhere else.
  *
@@ -77,7 +77,7 @@
 
   function renderRail() {
     if (!tasks.length) {
-      list.innerHTML = '<p class="empty mono">No tasks yet — start one.</p>';
+      list.innerHTML = '<p class="empty mono">No tasks yet. Start one.</p>';
       return;
     }
     list.innerHTML = tasks.map(function (t) {
@@ -122,7 +122,7 @@
       return;
     }
     if (!selected.messages.length) {
-      thread.innerHTML = '<p class="empty mono">No messages yet — describe the task below to start the brainstorm.</p>';
+      thread.innerHTML = '<p class="empty mono">No messages yet. Describe the task below to start the brainstorm.</p>';
       return;
     }
     thread.innerHTML = selected.messages.map(function (m) {
@@ -159,7 +159,7 @@
 
     var arts = selected ? selected.artifacts : [];
     if (!arts.length) {
-      artList.innerHTML = '<p class="hint">No artifacts yet — they appear when a run verifies.</p>';
+      artList.innerHTML = '<p class="hint">No artifacts yet. They appear when a run verifies.</p>';
     } else {
       artList.innerHTML = arts.map(function (a) {
         return '<div class="art"><div class="art-top"><span class="art-name mono">' + esc(a.id) +
@@ -244,7 +244,7 @@
     }).catch(function (err) {
       pending.querySelector('.msg-body').textContent =
         err.status === 503 ? 'Planner is not configured yet (missing API key).' :
-        err.status === 409 ? 'This task has moved on — chat is closed.' :
+        err.status === 409 ? 'This task has moved on; chat is closed.' :
         'Something went wrong. Try again.';
     }).then(function () {
       busy = false;

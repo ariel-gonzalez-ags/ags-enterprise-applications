@@ -1,6 +1,6 @@
 """Simulated sandbox run. Approving a plan spawns a coroutine that ticks
 checks_passed up on a timer, then lands at `verified` with proof artifacts.
-This exercises the exact task state machine real sandbox execution will use —
+This exercises the exact task state machine real sandbox execution will use;
 the swap point is run_task() itself."""
 import asyncio
 

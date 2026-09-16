@@ -1,4 +1,4 @@
-// Auth widget — the ONLY client-side JavaScript on the site.
+// Auth widget: the ONLY client-side JavaScript on the site.
 // Reads /api/auth/me and swaps the nav "Sign in" button for the user's
 // avatar + logout. Scoped exception to the no-JS rule (see AGENTS.md §8).
 (function () {
@@ -60,7 +60,7 @@
 
       menu.appendChild(who);
 
-      // Theme: system / light / dark — persists in localStorage, bootstrap
+      // Theme: system / light / dark: persists in localStorage, bootstrap
       // in Base.astro reads it before first paint.
       var themeBox = document.createElement('div');
       themeBox.className = 'usermenu-theme';

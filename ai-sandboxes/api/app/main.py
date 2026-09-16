@@ -1,4 +1,4 @@
-"""Agisphire API — auth + product endpoints (tasks, brainstorm, runs).
+"""Agisphire API: auth + product endpoints (tasks, brainstorm, runs).
 
 Mounted behind nginx at /api (see ../nginx.conf), so all routes here
 already live under that prefix from the client's perspective.

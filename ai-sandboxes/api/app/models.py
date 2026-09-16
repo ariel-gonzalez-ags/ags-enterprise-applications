@@ -1,4 +1,4 @@
-"""SQLAlchemy models — tasks, chat messages, artifacts.
+"""SQLAlchemy models: tasks, chat messages, artifacts.
 
 SQLite for now (single-file, in the api container's volume). The dialect is
 abstracted by SQLAlchemy, so Postgres later is a connection-string change.

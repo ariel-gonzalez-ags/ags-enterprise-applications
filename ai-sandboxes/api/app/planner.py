@@ -1,4 +1,4 @@
-"""Planner agent — Gemini via Google's OpenAI-compatible endpoint.
+"""Planner agent: Gemini via Google's OpenAI-compatible endpoint.
 
 Deliberately uses the `openai` SDK against the Gemini OpenAI-compat shim so
 the move to Vertex AI + WIF is a client-factory change only (base_url/auth),
@@ -59,7 +59,7 @@ def _fallback(reply: str) -> dict:
 
 async def reply(settings: Settings, history: list[dict]) -> dict:
     """history: [{'role': 'user'|'agent', 'text': ...}] oldest first.
-    Returns {'reply', 'title', 'plan'}; never raises on model/parse errors —
+    Returns {'reply', 'title', 'plan'}; never raises on model/parse errors;
     a degraded chat is better than a broken one."""
     messages = [{"role": "system", "content": _SYSTEM}]
     for m in history[-20:]:  # keep context window small and cheap
@@ -79,10 +79,10 @@ async def reply(settings: Settings, history: list[dict]) -> dict:
         choice = resp.choices[0]
         raw = choice.message.content or ""
         if choice.finish_reason == "length":
-            return _fallback("The plan got long — could you narrow the scope a bit?")
+            return _fallback("The plan got long; could you narrow the scope a bit?")
     except PlannerUnavailable:
         raise
-    except Exception as exc:  # API/network/quota — degrade gracefully
+    except Exception as exc:  # API/network/quota: degrade gracefully
         return _fallback(f"(planner temporarily unavailable: {type(exc).__name__})")
 
     try:

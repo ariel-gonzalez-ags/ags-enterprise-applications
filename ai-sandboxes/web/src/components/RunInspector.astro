@@ -1,6 +1,6 @@
 ---
 // Right inspector: run configuration (providers, guarantees) and artifacts.
-// Shell only — console.js reflects the selected task's config + artifacts.
+// Shell only: console.js reflects the selected task's config + artifacts.
 import Icon from './Icon.astro';
 import { providers } from '../content/console.js';
 ---
@@ -30,7 +30,7 @@ import { providers } from '../content/console.js';
     <div class="guarantee">
       <div>
         <div class="g-title"><Icon name="repeat" size={14} /> Idempotent result</div>
-        <div class="g-desc">Re-running the deliverable converges to the same state — no drift, no double-apply.</div>
+        <div class="g-desc">Re-running the deliverable converges to the same state. No drift, no double-apply.</div>
       </div>
       <span class="toggle" data-console="idempotent"><span class="knob"></span></span>
     </div>
@@ -44,7 +44,7 @@ import { providers } from '../content/console.js';
     <div class="guarantee">
       <div>
         <div class="g-title"><Icon name="clock" size={14} /> Max sandbox time</div>
-        <div class="g-desc">Hard stop — the sandbox burns down even if the task is mid-flight.</div>
+        <div class="g-desc">Hard stop. The sandbox burns down even if the task is mid-flight.</div>
       </div>
       <span class="mono budget" data-console="max-hours">—</span>
     </div>
@@ -53,7 +53,7 @@ import { providers } from '../content/console.js';
   <section>
     <h3><Icon name="folder" size={14} /> Artifacts</h3>
     <div class="art-list" data-console="artifacts">
-      <p class="hint">No artifacts yet — they appear when a run verifies.</p>
+      <p class="hint">No artifacts yet. They appear when a run verifies.</p>
     </div>
     <p class="hint foot">Delivered runs keep artifacts + evidence forever; the sandbox itself is gone.</p>
   </section>
@@ -98,7 +98,7 @@ import { providers } from '../content/console.js';
   .toggle.on .knob { left: 17px; background: var(--on-accent) }
 
   .art-list { display: flex; flex-direction: column; gap: 8px }
-  /* Artifact cards render at runtime via console.js — global under .art-list */
+  /* Artifact cards render at runtime via console.js: global under .art-list */
   .art-list :global(.art) { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px }
   .art-list :global(.art-top) { display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px }
   .art-list :global(.art-name) { font-size: 12px; color: var(--text) }

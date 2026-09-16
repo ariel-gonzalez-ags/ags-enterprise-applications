@@ -1,4 +1,4 @@
-// Console vocabulary — the product's shared language. UI shells and
+// Console vocabulary: the product's shared language. UI shells and
 // public/js/console.js map over this; live data comes from /api/tasks*.
 // Adding a provider/format/state is a data edit.
 
@@ -17,7 +17,7 @@ export const outputFormats = [
   { id: 'markdown', label: 'Markdown runbook', kind: 'doc' },
 ];
 
-// Task lifecycle. Order matters — the UI renders them as a pipeline.
+// Task lifecycle. Order matters: the UI renders them as a pipeline.
 export const taskStates = [
   { id: 'drafting', label: 'Drafting', hint: 'chatting with the planner' },
   { id: 'planned', label: 'Planned', hint: 'execution plan ready' },

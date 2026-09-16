@@ -1,5 +1,5 @@
 ---
-// Left rail: task library. Shell only — console.js renders cards from
+// Left rail: task library. Shell only: console.js renders cards from
 // GET /api/tasks. "New task" starts a brainstorm.
 import Icon from './Icon.astro';
 ---
@@ -26,7 +26,7 @@ import Icon from './Icon.astro';
   .new-btn:hover { color: var(--text); border-color: #57301A }
 
   .task-list { display: flex; flex-direction: column; gap: 4px }
-  /* Task cards render at runtime via console.js — Astro scoping doesn't
+  /* Task cards render at runtime via console.js: Astro scoping doesn't
      reach them, so these selectors are global (prefixed by .task-list). */
   .task-list :global(.empty) { font-size: 11.5px; color: var(--muted2); padding: 12px 14px }
   .task-list :global(.task) {
