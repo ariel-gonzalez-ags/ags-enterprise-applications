@@ -283,6 +283,21 @@
 
   /* ---------- target-cloud picker (rail) ---------- */
 
+  /* ---------- provider picker (dropdown under "New task") ---------- */
+
+  var provMenu = document.querySelector('[data-console="prov-menu"]');
+
+  function closeProvMenu() {
+    if (provMenu) provMenu.hidden = true;
+    newBtn.setAttribute('aria-expanded', 'false');
+  }
+  function toggleProvMenu() {
+    var open = provMenu.hidden;
+    provMenu.hidden = !open;
+    newBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) renderProviders();
+  }
+
   // Reflect the selected task's provider; clicking while the task is
   // shapeable PATCHes it. The picker also sets the provider for New task.
   function renderProviders() {
@@ -298,14 +313,21 @@
     if (!btn) return;
     var prov = btn.getAttribute('data-prov');
     localStorage.setItem('ags-provider', prov);
-    if (selected && (selected.state === 'drafting' || selected.state === 'planned')) {
-      api('/api/tasks/' + encodeURIComponent(selectedId), {
-        method: 'PATCH', body: JSON.stringify({ provider: prov }),
-      }).then(function (t) { selected = t; renderAll(); refreshList(); })
-        .catch(function () { select(selectedId); });
-    } else {
-      renderProviders();
-    }
+    closeProvMenu();
+    createTask(prov);
+  });
+
+  newBtn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    toggleProvMenu();
+  });
+
+  // Clicking anywhere outside the picker closes it.
+  document.addEventListener('click', function (e) {
+    if (provMenu && !provMenu.hidden && !e.target.closest('.new-wrap')) closeProvMenu();
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && provMenu && !provMenu.hidden) closeProvMenu();
   });
 
   /* ---------- inspector ---------- */
@@ -459,15 +481,14 @@
     if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
   }
 
-  newBtn.addEventListener('click', function () {
+  function createTask(prov) {
     if (busy) return;
     busy = true;
-    var prov = localStorage.getItem('ags-provider') || 'azure';
     api('/api/tasks', { method: 'POST', body: JSON.stringify({ title: '', provider: prov }) })
       .then(function (t) { return refreshList().then(function () { return select(t.id); }); })
       .catch(function () { /* surfaced by gate if auth broke */ })
       .then(function () { busy = false; input.focus(); });
-  });
+  }
 
   function send() {
     var text = input.value.trim();

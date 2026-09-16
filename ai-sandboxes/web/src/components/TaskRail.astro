@@ -8,24 +8,25 @@ import { providers } from '../content/console.js';
 <div class="rail-in">
   <div class="rail-head">
     <span class="rail-title"><Icon name="library" size={15} /> Tasks</span>
-    <button class="new-btn" data-console="new-task"><Icon name="plus" size={14} /> New task</button>
-  </div>
-
-  <div class="prov-block">
-    <span class="prov-label">Target cloud</span>
-    <div class="prov-grid" data-console="providers">
-      {providers.map((p) => (
-        <button class="prov" data-prov={p.id} type="button" title={p.name}>
-          {p.id === 'aws' ? (
-            <picture>
-              <source srcset="/assets/providers/aws-light.svg" media="(prefers-color-scheme: light)" />
-              <img src="/assets/providers/aws.svg" alt="AWS" class="prov-icon prov-icon-aws" />
-            </picture>
-          ) : (
-            <img src={`/assets/providers/${p.id}.svg`} alt={p.name} class={`prov-icon${p.id === 'aws' ? ' prov-icon-aws' : ''}`} />
-          )}
-        </button>
-      ))}
+    <div class="new-wrap">
+      <button class="new-btn" data-console="new-task" aria-haspopup="true" aria-expanded="false"><Icon name="plus" size={14} /> New task</button>
+      <div class="prov-menu" data-console="prov-menu" hidden>
+        <span class="prov-menu-label">Target cloud</span>
+        <div class="prov-grid" data-console="providers">
+          {providers.map((p) => (
+            <button class="prov" data-prov={p.id} type="button" title={p.name}>
+              {p.id === 'aws' ? (
+                <picture>
+                  <source srcset="/assets/providers/aws-light.svg" media="(prefers-color-scheme: light)" />
+                  <img src="/assets/providers/aws.svg" alt="AWS" class="prov-icon prov-icon-aws" />
+                </picture>
+              ) : (
+                <img src={`/assets/providers/${p.id}.svg`} alt={p.name} class={`prov-icon${p.id === 'aws' ? ' prov-icon-aws' : ''}`} />
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   </div>
 
@@ -65,8 +66,16 @@ import { providers } from '../content/console.js';
   }
   .new-btn:hover { color: var(--text); border-color: #57301A }
 
-  .prov-block { display: flex; flex-direction: column; gap: 8px }
-  .prov-label { font-size: 10px; font-weight: 600; color: var(--muted2); text-transform: uppercase; letter-spacing: .08em; font-family: 'JetBrains Mono', monospace }
+  /* Target-cloud picker is a dropdown that opens below "New task", not an
+     always-visible block. .new-wrap anchors it. */
+  .new-wrap { position: relative }
+  .prov-menu {
+    position: absolute; top: calc(100% + 6px); right: 0; z-index: 60;
+    background: var(--panel); border: 1px solid var(--line2); border-radius: 12px;
+    padding: 12px; width: 200px; box-shadow: 0 12px 40px rgba(0,0,0,.5);
+  }
+  .prov-menu[hidden] { display: none }
+  .prov-menu-label { display: block; font-size: 10px; font-weight: 600; color: var(--muted2); text-transform: uppercase; letter-spacing: .08em; font-family: 'JetBrains Mono', monospace; margin-bottom: 8px }
   .prov-grid { display: flex; gap: 6px }
   .prov-icon { border-radius: 3px; display: block; height: 14px; width: auto; max-width: 22px; object-fit: contain }
   .prov-icon-aws { height: 10px }
