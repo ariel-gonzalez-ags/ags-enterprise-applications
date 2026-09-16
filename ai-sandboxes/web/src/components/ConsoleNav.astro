@@ -19,7 +19,7 @@ import Icon from './Icon.astro';
       <a href="/app/artifacts"><Icon name="library" size={14} /> Artifacts</a>
     </nav>
 
-    <div class="cnav-user" data-auth="user"></div>
+    <div class="cnav-user" data-auth="user" data-auth-menu></div>
   </div>
 </header>
 
@@ -58,17 +58,28 @@ import Icon from './Icon.astro';
   .cnav-links a:hover { color: var(--text) }
   .cnav-links a.active { color: var(--text); background: var(--panel2) }
 
-  .cnav-user { display: flex; align-items: center; gap: 10px; min-height: 26px }
-  .cnav-user :global(.nav-avatar) {
-    width: 26px; height: 26px; border-radius: 50%; object-fit: cover;
-    border: 1px solid var(--line2);
+  .cnav-user { display: flex; align-items: center; min-height: 26px }
+  /* User dropdown (populated by auth.js) */
+  .cnav-user :global(.usermenu) { position: relative }
+  .cnav-user :global(.usermenu-btn) {
+    display: grid; place-items: center; width: 30px; height: 30px;
+    border-radius: 50%; border: 1px solid var(--line2); background: var(--panel2);
+    cursor: pointer; padding: 0; overflow: hidden; transition: .15s;
   }
-  .cnav-user :global(.nav-user) {
-    font-size: 13px; color: var(--muted); max-width: 140px;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  .cnav-user :global(.usermenu-btn:hover) { border-color: var(--muted2) }
+  .cnav-user :global(.usermenu-btn .nav-avatar) { width: 100%; height: 100%; object-fit: cover }
+  .cnav-user :global(.usermenu-initial) { color: var(--muted); font-size: 13px; font-weight: 600 }
+  .cnav-user :global(.usermenu-pop) {
+    position: absolute; right: 0; top: calc(100% + 8px); min-width: 200px;
+    background: var(--panel2); border: 1px solid var(--line2); border-radius: 12px;
+    padding: 6px; box-shadow: 0 12px 40px rgba(0, 0, 0, .5); z-index: 70;
   }
-  .cnav-user :global(.btn.ghost) {
-    font-size: 12px; padding: 6px 11px; color: var(--muted2);
+  .cnav-user :global(.usermenu-who) { padding: 9px 11px 10px; border-bottom: 1px solid var(--line); margin-bottom: 5px }
+  .cnav-user :global(.usermenu-name) { font-size: 13px; font-weight: 500; color: var(--text) }
+  .cnav-user :global(.usermenu-email) { font-size: 11.5px; color: var(--muted2); margin-top: 1px }
+  .cnav-user :global(.usermenu-item) {
+    display: block; font-size: 13px; color: var(--muted); padding: 8px 11px;
+    border-radius: 8px; transition: .15s;
   }
-  .cnav-user :global(.btn.ghost):hover { color: var(--text) }
+  .cnav-user :global(.usermenu-item:hover) { background: var(--raised); color: var(--text) }
 </style>

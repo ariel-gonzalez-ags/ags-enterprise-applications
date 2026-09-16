@@ -2,7 +2,7 @@
 // Right inspector: run configuration (providers, formats, guarantees)
 // and the artifacts this run will produce / has produced.
 import Icon from './Icon.astro';
-import { providers, outputFormats, defaultRunConfig, artifacts } from '../content/console.js';
+import { providers, defaultRunConfig, artifacts } from '../content/console.js';
 ---
 <div class="insp">
   <section>
@@ -12,19 +12,6 @@ import { providers, outputFormats, defaultRunConfig, artifacts } from '../conten
       {providers.map((p) => (
         <button class={`prov ${defaultRunConfig.providers.includes(p.id) ? 'on' : ''}`}>
           <img src={`/assets/providers/${p.id}.svg`} alt={p.name} class="prov-icon" /> {p.name}
-        </button>
-      ))}
-    </div>
-  </section>
-
-  <section>
-    <h3><Icon name="doc" size={14} /> Output formats</h3>
-    <p class="hint">What the deliverable contains. The artifact library stores all of them.</p>
-    <div class="fmt-grid">
-      {outputFormats.map((f) => (
-        <button class={`fmt ${defaultRunConfig.formats.includes(f.id) ? 'on' : ''}`}>
-          <span>{f.label}</span>
-          <span class="fmt-kind mono">{f.kind}</span>
         </button>
       ))}
     </div>
@@ -92,17 +79,7 @@ import { providers, outputFormats, defaultRunConfig, artifacts } from '../conten
   .prov:hover { color: var(--text); background: var(--raised) }
   .prov.on { background: var(--raised); border-color: var(--line2); color: var(--text) }
 
-  .fmt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px }
-  .fmt {
-    display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
-    padding: 9px 11px; font-size: 12.5px; border-radius: 10px; text-align: left;
-    background: var(--panel2); border: 1px solid var(--line2); color: var(--muted); cursor: pointer;
-    transition: .15s;
-  }
-  .fmt:hover { color: var(--text); background: var(--raised) }
-  .fmt.on { background: var(--raised); color: var(--text) }
   .fmt-kind { font-size: 9.5px; color: var(--muted2); text-transform: uppercase; letter-spacing: .05em }
-  .fmt.on .fmt-kind { color: var(--muted) }
 
   .guarantee { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 10px 0; border-bottom: 1px dashed var(--line2) }
   .guarantee:last-child { border-bottom: none }

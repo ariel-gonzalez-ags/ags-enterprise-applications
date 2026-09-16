@@ -24,6 +24,41 @@ import { brainstorm } from '../content/console.js';
       <div class="msg-body">{m.text}</div>
     </div>
   ))}
+
+  <!-- Follow-up choice: the planner proposes output formats; user picks
+       any subset (or edits the proposal). Rendered as a chat artifact. -->
+  <div class="msg agent">
+    <div class="msg-agent-tag mono"><Icon name="doc" size={13} /> deliverables</div>
+    <div class="choice-card">
+      <p class="choice-q">Based on the plan, I'd deliver these. Toggle what you want:</p>
+      <div class="choice-opts">
+        <button class="opt on">
+          <span class="opt-check"><Icon name="check" size={11} /></span>
+          <span class="opt-name">Terraform <span class="opt-kind mono">iac</span></span>
+          <span class="opt-why">winning provider, idempotent apply</span>
+        </button>
+        <button class="opt on">
+          <span class="opt-check"><Icon name="check" size={11} /></span>
+          <span class="opt-name">Markdown runbook <span class="opt-kind mono">doc</span></span>
+          <span class="opt-why">benchmark evidence + how to re-run</span>
+        </button>
+        <button class="opt">
+          <span class="opt-check"><Icon name="check" size={11} /></span>
+          <span class="opt-name">Bash <span class="opt-kind mono">script</span></span>
+          <span class="opt-why">quick manual path, if you want it</span>
+        </button>
+        <button class="opt">
+          <span class="opt-check"><Icon name="check" size={11} /></span>
+          <span class="opt-name">Ansible <span class="opt-kind mono">iac</span></span>
+          <span class="opt-why">only if config management matters later</span>
+        </button>
+      </div>
+      <div class="choice-foot">
+        <span class="choice-hint">The planner proposes; you decide. Ask for others in chat — ARM, PowerShell, anything.</span>
+        <button class="btn primary sm">Confirm deliverables</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div class="composer">
@@ -81,4 +116,35 @@ import { brainstorm } from '../content/console.js';
   }
   .send:hover { border-color: var(--accent); color: var(--accent) }
   .composer-hint { margin-top: 10px; font-size: 10.5px; color: var(--muted2); text-align: center }
+
+  /* In-chat choice cards — planner proposes options, user toggles */
+  .choice-card {
+    background: var(--panel2); border: 1px solid var(--line); border-radius: 12px;
+    padding: 16px; max-width: 520px;
+  }
+  .choice-q { font-size: 13.5px; color: var(--text); margin-bottom: 12px }
+  .choice-opts { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px }
+  .opt {
+    display: flex; align-items: center; gap: 11px; text-align: left;
+    background: transparent; border: 1px solid var(--line); border-radius: 10px;
+    padding: 10px 12px; cursor: pointer; transition: .15s;
+  }
+  .opt:hover { background: var(--raised) }
+  .opt.on { background: var(--raised); border-color: var(--line2) }
+  .opt-check {
+    width: 16px; height: 16px; border-radius: 5px; border: 1px solid var(--line2);
+    display: grid; place-items: center; color: transparent; flex-shrink: 0; transition: .15s;
+  }
+  .opt.on .opt-check { border-color: var(--accent); color: var(--accent) }
+  .opt-name { font-size: 13px; font-weight: 500; color: var(--muted); display: flex; align-items: baseline; gap: 7px }
+  .opt.on .opt-name { color: var(--text) }
+  .opt-kind { font-size: 9px; color: var(--muted2); text-transform: uppercase; letter-spacing: .05em }
+  .opt-why { margin-left: auto; font-size: 11.5px; color: var(--muted2) }
+  .choice-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid var(--line); padding-top: 12px }
+  .choice-hint { font-size: 11px; color: var(--muted2); line-height: 1.45; max-width: 320px }
+  .btn.sm { font-size: 12.5px; padding: 8px 13px }
+  .choice-foot .btn.primary {
+    background: transparent; border: 1px solid var(--accent); color: var(--accent);
+  }
+  .choice-foot .btn.primary:hover { background: var(--accent-dim) }
 </style>
