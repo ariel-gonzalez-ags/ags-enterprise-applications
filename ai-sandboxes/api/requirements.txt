@@ -2,3 +2,6 @@ fastapi==0.141.*
 uvicorn[standard]==0.53.*
 httpx==0.28.*
 itsdangerous==2.2.*
+sqlalchemy[asyncio]==2.0.*
+aiosqlite==0.21.*
+openai==2.*
