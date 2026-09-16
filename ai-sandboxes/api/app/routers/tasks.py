@@ -235,7 +235,7 @@ async def chat(task_id: str, body: ChatIn, request: Request, user: dict = Depend
 
 
 @router.post("/tasks/{task_id}/approve")
-async def approve(task_id: str, user: dict = Depends(_user)):
+async def approve(task_id: str, request: Request, user: dict = Depends(_user)):
     async with db.session() as s:
         t = await s.get(Task, task_id)
         if t is None or t.owner_sub != user["sub"]:
@@ -245,5 +245,5 @@ async def approve(task_id: str, user: dict = Depends(_user)):
         t.state = "running"
         t.checks_passed = 0
         await s.commit()
-    runner.spawn(task_id)
+    runner.spawn(task_id, _settings(request))
     return {"id": task_id, "state": "running"}

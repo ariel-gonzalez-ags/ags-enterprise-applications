@@ -102,3 +102,34 @@ async def reply(settings: Settings, history: list[dict]) -> dict:
         "title": data.get("title") if isinstance(data.get("title"), str) else None,
         "plan": plan,
     }
+
+
+_NORM_SYSTEM = """You normalize a free-text deliverable request into a file.
+The user typed something like "jsn policy format" or "helm chart". Reply with
+STRICT JSON, no fences:
+{"format": "<lowercase slug, dashes, e.g. json-policy>", "ext": "<file extension with dot, e.g. .json>"}
+Rules: fix obvious typos (jsn -> json). Pick the extension the user most
+likely wants the file to have. Keep format short (<=4 words)."""
+
+
+async def normalize_format(settings: Settings, raw: str) -> dict | None:
+    """Resolve a free-text deliverable to {format, ext} via the planner.
+    Returns None when unavailable or unparseable; callers fall back to a
+    mechanical slug. Fixes typos and picks a sensible extension."""
+    if not settings.planner_configured:
+        return None
+    try:
+        resp = await _client(settings).chat.completions.create(
+            model=settings.gemini_model,
+            messages=[{"role": "system", "content": _NORM_SYSTEM},
+                      {"role": "user", "content": raw}],
+            temperature=0.0, max_tokens=60,
+            response_format={"type": "json_object"},
+        )
+        data = json.loads(resp.choices[0].message.content or "")
+        fmt, ext = data.get("format"), data.get("ext")
+        if isinstance(fmt, str) and isinstance(ext, str) and ext.startswith("."):
+            return {"format": fmt.strip().lower(), "ext": ext.strip().lower()}
+    except Exception:
+        pass
+    return None

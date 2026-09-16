@@ -29,16 +29,28 @@ _EXT = {"json": ".json", "yaml": ".yml", "yml": ".yml", "helm": ".tgz",
         "dockerfile": "", "xml": ".xml", "hcl": ".tf", "csv": ".csv"}
 
 
-def _file_for(fmt: str) -> tuple[str, str, str]:
-    """(filename, size, note) for any accepted format. Custom formats the
-    user typed get a file named after them; nothing is dropped. The
-    extension is inferred from any known token inside the slug, so
-    "json-policy-format" lands as .json, not a mystery .txt."""
-    if fmt in _FORMAT_FILES:
-        return _FORMAT_FILES[fmt]
+def _mechanical_file(fmt: str) -> tuple[str, str, str]:
+    """Offline fallback: extension guessed from any known token in the slug."""
     ext = next((e for tok in fmt.replace("_", "-").split("-") if (e := _EXT.get(tok))), ".txt")
     filename = fmt if not ext or fmt.endswith(ext) else fmt + ext
     return (filename, "1.2 KB", f"custom deliverable: {fmt.replace('-', ' ')}")
+
+
+async def _file_for(fmt: str, settings=None) -> tuple[str, str, str]:
+    """(filename, size, note) for any accepted format; nothing is dropped.
+    Custom formats ask the planner to resolve the real file (fixes typos,
+    picks the extension the user meant: "jsn policy" -> json-policy.json).
+    Falls back to the mechanical guess when the planner is unavailable."""
+    if fmt in _FORMAT_FILES:
+        return _FORMAT_FILES[fmt]
+    if settings is not None:
+        from . import planner
+        norm = await planner.normalize_format(settings, fmt.replace("-", " "))
+        if norm:
+            ext = norm["ext"]
+            filename = norm["format"] if norm["format"].endswith(ext) else norm["format"] + ext
+            return (filename, "1.2 KB", f"custom deliverable: {fmt.replace('-', ' ')}")
+    return _mechanical_file(fmt)
 
 
 def _content(filename: str, task: Task, note: str, total: int) -> str:
@@ -70,7 +82,7 @@ async def _say(s, task_id: str, text: str) -> None:
     s.add(Message(task_id=task_id, role="agent", text=text))
 
 
-async def run_task(task_id: str) -> None:
+async def run_task(task_id: str, settings=None) -> None:
     async with db.session() as s:
         task = await s.get(Task, task_id)
         if task is None or task.state != "running":
@@ -100,7 +112,7 @@ async def run_task(task_id: str) -> None:
         # one artifact per accepted format; custom formats get a named file too
         files = []
         for f in sorted(formats):
-            fn, size, note = _file_for(f)
+            fn, size, note = await _file_for(f, settings)
             files.append((fn, f, size, note))
         if "markdown" not in formats:  # runbook is always delivered
             fn, size, note = _FORMAT_FILES["markdown"]
@@ -121,5 +133,5 @@ async def run_task(task_id: str) -> None:
         await s.commit()
 
 
-def spawn(task_id: str) -> None:
-    asyncio.get_running_loop().create_task(run_task(task_id))
+def spawn(task_id: str, settings=None) -> None:
+    asyncio.get_running_loop().create_task(run_task(task_id, settings))
