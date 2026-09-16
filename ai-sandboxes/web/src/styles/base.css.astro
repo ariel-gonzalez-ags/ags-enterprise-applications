@@ -12,9 +12,16 @@
   }
   .btn:hover { border-color: #57301A; background: var(--panel2) }
   .btn.primary {
-    background: var(--accent); color: var(--on-accent); border-color: transparent; font-weight: 600;
+    position: relative; border-color: transparent; font-weight: 600; color: var(--on-accent);
+    background: linear-gradient(160deg, #FF7038 0%, var(--accent) 46%, #D63F0E 100%);
+    box-shadow: 0 8px 24px rgba(240, 86, 35, .32), inset 0 1px 0 rgba(255, 255, 255, .22);
+    transition: transform .18s ease, box-shadow .18s ease, filter .18s ease;
   }
-  .btn.primary:hover { background: #FF6B38 }
+  .btn.primary:hover {
+    filter: brightness(1.06); transform: translateY(-1px);
+    box-shadow: 0 12px 32px rgba(240, 86, 35, .42), inset 0 1px 0 rgba(255, 255, 255, .28);
+  }
+  .btn.primary:active { transform: translateY(0); filter: brightness(.98) }
   .btn.ghost { background: transparent; border-color: transparent; color: var(--muted) }
   .btn.ghost:hover { color: var(--text) }
   .btn.lg { padding: 13px 26px; font-size: 15px; border-radius: 12px }

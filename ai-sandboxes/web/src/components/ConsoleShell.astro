@@ -1,13 +1,15 @@
 ---
 // Console shell: fixed nav + three-pane grid (library / stage / inspector).
 // Height fills the viewport below the nav; panes scroll independently.
-// Includes the anonymous-user gate overlay (toggled by the page's script).
+// Anonymous users get redirected to /login by the gate script in app.astro;
+// the #gate overlay below is only a no-JS / script-failure fallback.
 interface Props {
   title?: string;
 }
 const { title = 'Agisphire: Console' } = Astro.props;
 import Base from '../layouts/Base.astro';
 import ConsoleNav from './ConsoleNav.astro';
+import Logo from './Logo.astro';
 ---
 <Base title={title} auth>
   <ConsoleNav />
@@ -19,9 +21,10 @@ import ConsoleNav from './ConsoleNav.astro';
 
   <div id="gate" hidden class="gate-overlay">
     <div class="gate-card">
-      <h1>Your sandbox console</h1>
-      <p>This area requires an account.</p>
-      <a href="/api/auth/login?next=/app" class="btn primary lg">Sign in with Google</a>
+      <div class="gate-logo"><Logo size={44} /></div>
+      <p class="gate-eyebrow mono">Agisphire console</p>
+      <h1>Sign in to continue</h1>
+      <a href="/login" class="btn primary lg">Go to sign in</a>
     </div>
   </div>
 </Base>
@@ -40,18 +43,20 @@ import ConsoleNav from './ConsoleNav.astro';
 
   .gate-overlay {
     position: fixed; inset: 0; z-index: 60; display: grid; place-items: center;
-    background: var(--scrim); backdrop-filter: blur(8px);
+    background: var(--scrim); backdrop-filter: blur(10px); padding: 24px;
   }
   .gate-overlay[hidden] { display: none }
   .gate-card {
-    text-align: center; padding: 48px 56px;
+    text-align: center; padding: 52px 56px; max-width: 460px;
     background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
   }
-  .gate-card h1 { font-size: 26px; font-weight: 600; letter-spacing: -.02em; margin-bottom: 10px }
-  .gate-card p { color: var(--muted); margin-bottom: 26px }
+  .gate-logo { display: flex; justify-content: center; margin-bottom: 18px }
+  .gate-eyebrow { font-size: 11px; color: var(--accent); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 12px }
+  .gate-card h1 { font-size: 24px; font-weight: 600; letter-spacing: -.02em; margin-bottom: 22px; line-height: 1.25 }
 
   @media (max-width: 1100px) {
     .console { grid-template-columns: 1fr; height: auto }
     .rail, .inspector { border: none; border-bottom: 1px solid var(--line) }
+    .gate-card { padding: 40px 28px }
   }
 </style>

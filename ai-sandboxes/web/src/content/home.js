@@ -201,6 +201,11 @@ export const cta = {
   button: 'Submit your first task',
 };
 
+export const login = {
+  title: 'Sign in to Agisphire',
+  button: 'Continue with Google',
+};
+
 export const footer = {
   note: `\u00a9 ${brand.year} ${brand.name}. Concept mockup`,
   links: [
