@@ -151,7 +151,27 @@ async def main():
         assert r.status_code == 422
         print("ok    PATCH formats: editable in draft, slugged, empty rejected, locked after")
 
-        # 6c. delete: drafts go, verified stays
+        # 6c. every accepted format yields an artifact, including custom ones
+        r = await c.post("/api/tasks", json={"title": "custom fmt"})
+        tid3 = r.json()["id"]
+        await c.patch(f"/api/tasks/{tid3}", json={"formats": ["ansible", "jsonpolicyformat"]})
+        # simulate the planner having planned it (approve requires `planned`)
+        import app.db as _db
+        from app.models import Task as _Task
+        async with _db.session() as s:
+            t3 = await s.get(_Task, tid3)
+            t3.state = "planned"
+            await s.commit()
+        r = await c.post(f"/api/tasks/{tid3}/approve")
+        assert r.status_code == 200, r.text
+        await runner.run_task(tid3)
+        t3 = (await c.get(f"/api/tasks/{tid3}")).json()
+        ids = {a["id"] for a in t3["artifacts"]}
+        assert "harden.yml" in ids and "jsonpolicyformat.txt" in ids, ids
+        assert "runbook.md" in ids and "verify.sh" in ids
+        print("ok    custom format produces a named artifact; nothing dropped")
+
+        # 6d. delete: drafts go, verified stays
         r = await c.delete(f"/api/tasks/{tid2}")
         assert r.status_code == 204, r.status_code
         r = await c.get(f"/api/tasks/{tid2}")

@@ -10,7 +10,8 @@ from .models import Artifact, Message, Task
 
 _TICK_SECONDS = 3  # dev-friendly; real runs will be event-driven
 
-# One proof artifact per deliverable format + the universal verification pair.
+# Known formats get realistic filenames; the runner must produce a file for
+# EVERY accepted format, so unknown/custom ones fall back to a generic name.
 _FORMAT_FILES = {
     "terraform": ("main.tf", "8.2 KB", "winning configuration, fully idempotent"),
     "ansible": ("harden.yml", "5.7 KB", "idempotent playbook, check-mode clean"),
@@ -18,8 +19,24 @@ _FORMAT_FILES = {
     "bash": ("setup.sh", "2.1 KB", "set -euo pipefail, rerunnable"),
     "powershell": ("Setup.ps1", "2.4 KB", "idempotent, supports -WhatIf"),
     "markdown": ("runbook.md", "6.4 KB", "what ran, evidence, how to re-verify"),
+    "json": ("policy.json", "3.1 KB", "definition + assignment, validated"),
 }
 _ALWAYS = [("verify.sh", "bash", "0.9 KB", "rerun the acceptance checks anywhere")]
+
+# Extensions guessed from the format slug so custom deliverables get a sane
+# filename instead of being dropped.
+_EXT = {"json": ".json", "yaml": ".yml", "yml": ".yml", "helm": ".tgz",
+        "dockerfile": "", "xml": ".xml", "hcl": ".tf", "csv": ".csv"}
+
+
+def _file_for(fmt: str) -> tuple[str, str, str]:
+    """(filename, size, note) for any accepted format. Custom formats the
+    user typed get a generic file named after them; nothing is dropped."""
+    if fmt in _FORMAT_FILES:
+        return _FORMAT_FILES[fmt]
+    ext = _EXT.get(fmt, ".txt")
+    filename = fmt if not ext or fmt.endswith(ext) else fmt + ext
+    return (filename, "1.2 KB", f"custom deliverable: {fmt}")
 
 
 def _content(filename: str, task: Task, note: str, total: int) -> str:
@@ -78,7 +95,11 @@ async def run_task(task_id: str) -> None:
         if task is None or task.state != "running":
             return
         formats = set(task.formats)
-        files = [(_FORMAT_FILES[f][0], f, *_FORMAT_FILES[f][1:]) for f in sorted(formats) if f in _FORMAT_FILES]
+        # one artifact per accepted format; custom formats get a named file too
+        files = []
+        for f in sorted(formats):
+            fn, size, note = _file_for(f)
+            files.append((fn, f, size, note))
         if "markdown" not in formats:  # runbook is always delivered
             fn, size, note = _FORMAT_FILES["markdown"]
             files.append((fn, "markdown", size, note))
