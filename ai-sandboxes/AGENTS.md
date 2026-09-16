@@ -179,21 +179,55 @@ Eyebrows are uppercase, `letter-spacing .08em`, mono, `--accent` colored.
 
 The design system (`styles/tokens`, `components/Logo`, `components/Icon`) and
 the content-as-data pattern are stack-agnostic — carry them forward whatever
-happens. Auth (phase 2) is done; the expected growth from here:
+happens. Auth (phase 2) and the product backend (phase 3: tasks + planner +
+simulated runs, SQLite persistence) are done. Growth from here:
 
 1. **More pages / blog / docs** → stays static, just add pages. No flag needed.
-2. **Product features** (task submission, sandbox status) → new routers in
-   `api/app/routers/`, gated by `session.get_session`. The session is
-   identity-provider-agnostic: enterprise SSO (SAML/OIDC via Keycloak or
-   Entra ID) later is a config-level change, not a rewrite.
-3. **Persistence** (task history, user records) → flag to the user, then add
-   a database as a third compose service. Do not start persisting state in
-   cookies or in-memory dicts.
-4. **Heavy product UI** (live console) → reconsider client interactivity per
+2. **More product API surface** → new routers in `api/app/routers/`, gated by
+   `session.get_session`. The session is identity-provider-agnostic:
+   enterprise SSO (SAML/OIDC via Keycloak or Entra ID) later is a
+   config-level change, not a rewrite.
+3. **Real sandbox execution** (the remaining mock: `runner.run_task()`) →
+   flag to the user first. This is the next architectural leap: cloud
+   credentials (per-user vs. platform-scoped), sandbox orchestration
+   (containers vs. per-cloud IaC), live status (polling is fine now;
+   websockets if it gets chatty).
+4. **Multi-LLM / heavier planning** → the planner is provider-agnostic by
+   construction (OpenAI-compat endpoint); Vertex AI + WIF is the planned
+   swap, touching only the client factory.
+5. **Postgres** → when single-node SQLite stops fitting (multi-writer,
+   managed backups), it's a connection-string change. SQLAlchemy already
+   abstracts the dialect; don't add it earlier "just in case".
+6. **Heavy product UI** (live console) → reconsider client interactivity per
    feature (Astro islands), not as a blanket rewrite.
 
 Never bolt a backend onto the static nginx image; the api service exists for
 that. Marketing pages stay prerendered (static) regardless.
+
+## Product API contract (what console.js expects)
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/tasks` | rail list (lightweight, no messages) |
+| `POST /api/tasks` `{title}` | create in `drafting`, returns the task |
+| `GET /api/tasks/{id}` | full detail: messages, artifacts, config |
+| `POST /api/tasks/{id}/messages` `{text}` | user chat → `{message, task}`; plan flips state to `planned` |
+| `POST /api/tasks/{id}/approve` | `planned` → `running`, spawns the simulated run |
+
+All gated by the session cookie, scoped to `owner_sub` (404 across owners,
+not 403 — don't leak existence). Task JSON shape: `{id (GUID), title, state,
+provider, formats[], idempotent, checks{passed,total}, updated}`; detail adds
+`config{destroyAfter,maxHours}`, `messages[{role,text,plan,at}]`,
+`artifacts[{id,kind,size,note}]`. Planner messages carry
+`plan = {summary, clouds[], deliverables[{id,why}], est_hours} | null`.
+
+Operational gotchas:
+- `/api/healthz` reports `oauth_configured` + `planner_configured` — check
+  it first when chat or sign-in 503s; both mean "env var missing".
+- The api container runs as `nobody`; the `/data` volume (SQLite file)
+  inherits ownership from the image's `chown nobody:nogroup /data`. If you
+  ever see `sqlite3.OperationalError: unable to open database file`, that's
+  a volume created before that chown — `docker compose down -v` fixes it.
 
 ## Workflow
 
