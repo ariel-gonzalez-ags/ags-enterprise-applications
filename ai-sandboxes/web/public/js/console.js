@@ -336,7 +336,10 @@
     var url = m[0];
     viewerName.textContent = card.getAttribute('data-art-name');
     viewerBody.textContent = 'loading…';
-    viewerDl.href = url;
+    // setAttribute (not .href) so the sanitised value is never coerced
+    // through the URL setter's javascript: handling; value is regex-locked
+    // to a same-origin artifact path.
+    viewerDl.setAttribute('href', url);
     viewer.hidden = false;
     fetch(url, { credentials: 'same-origin' })
       .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
