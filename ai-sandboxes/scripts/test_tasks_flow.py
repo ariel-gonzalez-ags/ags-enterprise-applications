@@ -154,7 +154,10 @@ async def main():
         # 6c. every accepted format yields an artifact, including custom ones
         r = await c.post("/api/tasks", json={"title": "custom fmt"})
         tid3 = r.json()["id"]
-        await c.patch(f"/api/tasks/{tid3}", json={"formats": ["ansible", "jsonpolicyformat"]})
+        # slug the way the user types it: multi-word, mixed case
+        await c.patch(f"/api/tasks/{tid3}", json={"formats": ["ansible", "JSON Policy Format!!"]})
+        fmts = (await c.get(f"/api/tasks/{tid3}")).json()["formats"]
+        assert "json-policy-format" in fmts, fmts
         # simulate the planner having planned it (approve requires `planned`)
         import app.db as _db
         from app.models import Task as _Task
@@ -167,9 +170,10 @@ async def main():
         await runner.run_task(tid3)
         t3 = (await c.get(f"/api/tasks/{tid3}")).json()
         ids = {a["id"] for a in t3["artifacts"]}
-        assert "harden.yml" in ids and "jsonpolicyformat.txt" in ids, ids
+        assert "harden.yml" in ids, ids
+        assert "json-policy-format.json" in ids, ids  # extension inferred from token
         assert "runbook.md" in ids and "verify.sh" in ids
-        print("ok    custom format produces a named artifact; nothing dropped")
+        print("ok    custom format slugged (json-policy-format) -> .json artifact")
 
         # 6d. delete: drafts go, verified stays
         r = await c.delete(f"/api/tasks/{tid2}")

@@ -138,9 +138,12 @@ class PatchTask(BaseModel):
 
 
 def _slug(raw: str) -> str:
-    """Lowercase, spaces to dashes, keep [a-z0-9-_]; matches the client."""
+    """Lowercase, whitespace runs to dashes, strip the rest; matches the client.
+    "JSON policy format" -> "json-policy-format"."""
     import re
-    return re.sub(r"[^a-z0-9-_]", "", raw.strip().lower().replace(" ", "-"))[:32]
+    s = re.sub(r"\s+", "-", raw.strip().lower())
+    s = re.sub(r"[^a-z0-9-_]", "", s)
+    return re.sub(r"-{2,}", "-", s).strip("-")[:32]
 
 @router.patch("/tasks/{task_id}")
 async def patch_task(task_id: str, body: PatchTask, user: dict = Depends(_user)):

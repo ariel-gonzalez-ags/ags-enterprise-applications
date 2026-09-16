@@ -31,12 +31,14 @@ _EXT = {"json": ".json", "yaml": ".yml", "yml": ".yml", "helm": ".tgz",
 
 def _file_for(fmt: str) -> tuple[str, str, str]:
     """(filename, size, note) for any accepted format. Custom formats the
-    user typed get a generic file named after them; nothing is dropped."""
+    user typed get a file named after them; nothing is dropped. The
+    extension is inferred from any known token inside the slug, so
+    "json-policy-format" lands as .json, not a mystery .txt."""
     if fmt in _FORMAT_FILES:
         return _FORMAT_FILES[fmt]
-    ext = _EXT.get(fmt, ".txt")
+    ext = next((e for tok in fmt.replace("_", "-").split("-") if (e := _EXT.get(tok))), ".txt")
     filename = fmt if not ext or fmt.endswith(ext) else fmt + ext
-    return (filename, "1.2 KB", f"custom deliverable: {fmt}")
+    return (filename, "1.2 KB", f"custom deliverable: {fmt.replace('-', ' ')}")
 
 
 def _content(filename: str, task: Task, note: str, total: int) -> str:

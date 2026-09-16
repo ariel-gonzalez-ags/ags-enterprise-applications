@@ -222,7 +222,8 @@
     if (!form) return;
     e.preventDefault();
     var inputEl = form.querySelector('input');
-    var val = inputEl.value.trim().toLowerCase().replace(/[^a-z0-9-_]/g, '');
+    // slug: lowercase, whitespace runs to dashes, strip the rest ("JSON policy format" -> "json-policy-format")
+    var val = inputEl.value.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-_]/g, '').replace(/-{2,}/g, '-').replace(/^-|-$/g, '');
     if (!val) return;
     var formats = selected.formats.slice();
     if (formats.indexOf(val) === -1) formats.push(val);
