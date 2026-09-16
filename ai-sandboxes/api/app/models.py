@@ -31,6 +31,7 @@ class Task(Base):
     title: Mapped[str] = mapped_column(String(200), default="Untitled task")
     state: Mapped[str] = mapped_column(String(16), default="drafting", index=True)
     provider: Mapped[str] = mapped_column(String(16), default="azure")
+    model: Mapped[str] = mapped_column(String(40), default="gemini-3.6-flash")
     formats: Mapped[list] = mapped_column(JSON, default=list)
     idempotent: Mapped[bool] = mapped_column(Boolean, default=True)
     destroy_after: Mapped[bool] = mapped_column(Boolean, default=True)

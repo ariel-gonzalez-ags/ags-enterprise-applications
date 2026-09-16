@@ -13,12 +13,12 @@ import RunInspector from '../components/RunInspector.astro';
 </ConsoleShell>
 
 <script>
-  // Gate: anonymous → reveal overlay; signed in → boot the console client.
+  // Gate: anonymous → /login; signed in → boot the console client.
   fetch('/api/auth/me', { credentials: 'same-origin' })
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (data) {
       if (!data || !data.user) {
-        document.getElementById('gate').hidden = false;
+        window.location.replace('/login');
         return;
       }
       var s = document.createElement('script');

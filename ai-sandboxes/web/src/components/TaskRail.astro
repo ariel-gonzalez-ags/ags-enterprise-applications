@@ -8,24 +8,34 @@ import { providers } from '../content/console.js';
 <div class="rail-in">
   <div class="rail-head">
     <span class="rail-title"><Icon name="library" size={15} /> Tasks</span>
-    <button class="new-btn" data-console="new-task"><Icon name="plus" size={14} /> New task</button>
-  </div>
-
-  <div class="prov-block">
-    <span class="prov-label">Target cloud</span>
-    <div class="prov-grid" data-console="providers">
-      {providers.map((p) => (
-        <button class="prov" data-prov={p.id} type="button" title={p.name}>
-          {p.id === 'aws' ? (
-            <picture>
-              <source srcset="/assets/providers/aws-light.svg" media="(prefers-color-scheme: light)" />
-              <img src="/assets/providers/aws.svg" alt="AWS" class="prov-icon prov-icon-aws" />
-            </picture>
-          ) : (
-            <img src={`/assets/providers/${p.id}.svg`} alt={p.name} class={`prov-icon${p.id === 'aws' ? ' prov-icon-aws' : ''}`} />
-          )}
-        </button>
-      ))}
+    <div class="new-wrap">
+      <button class="new-btn" data-console="new-task" aria-haspopup="true" aria-expanded="false"><Icon name="plus" size={14} /> New task</button>
+      <div class="prov-menu" data-console="prov-menu" hidden>
+        <span class="prov-menu-label">Target cloud</span>
+        <div class="prov-grid" data-console="providers">
+          {providers.map((p) => (
+            <button class="prov" data-prov={p.id} type="button" title={p.name}>
+              {p.id === 'aws' ? (
+                <picture>
+                  <source srcset="/assets/providers/aws-light.svg" media="(prefers-color-scheme: light)" />
+                  <img src="/assets/providers/aws.svg" alt="AWS" class="prov-icon prov-icon-aws" />
+                </picture>
+              ) : (
+                <img src={`/assets/providers/${p.id}.svg`} alt={p.name} class={`prov-icon${p.id === 'aws' ? ' prov-icon-aws' : ''}`} />
+              )}
+            </button>
+          ))}
+        </div>
+        <span class="prov-menu-label">Planner model</span>
+        <div class="model-dd">
+          <button class="model-dd-btn" data-console="model-btn" type="button" aria-haspopup="true" aria-expanded="false">
+            <span class="model-dd-current" data-console="model-current">Gemini 3.6 Flash</span>
+            <svg class="model-dd-caret" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+          <div class="model-dd-list" data-console="models" hidden></div>
+        </div>
+        <button class="prov-create" data-console="create-task" type="button">Create task</button>
+      </div>
     </div>
   </div>
 
@@ -45,6 +55,15 @@ import { providers } from '../content/console.js';
   </div>
 </div>
 
+<div class="palette" data-console="palette" hidden>
+  <div class="palette-box">
+    <input class="palette-input" data-console="palette-input" type="text"
+      placeholder="Search your tasks…" autocomplete="off" spellcheck="false" />
+    <div class="palette-list" data-console="palette-list"></div>
+    <p class="palette-foot mono">↑↓ move · Enter open · Esc close</p>
+  </div>
+</div>
+
 <style>
   .rail-in { padding: 20px 16px; display: flex; flex-direction: column; gap: 16px }
   .rail-head { display: flex; justify-content: space-between; align-items: center }
@@ -56,8 +75,17 @@ import { providers } from '../content/console.js';
   }
   .new-btn:hover { color: var(--text); border-color: #57301A }
 
-  .prov-block { display: flex; flex-direction: column; gap: 8px }
-  .prov-label { font-size: 10px; font-weight: 600; color: var(--muted2); text-transform: uppercase; letter-spacing: .08em; font-family: 'JetBrains Mono', monospace }
+  /* Target-cloud picker is a dropdown that opens below "New task", not an
+     always-visible block. .new-wrap anchors it. */
+  .new-wrap { position: relative }
+  .prov-menu {
+    position: absolute; top: calc(100% + 6px); right: 0; z-index: 60;
+    background: var(--panel); border: 1px solid var(--line2); border-radius: 12px;
+    padding: 12px; width: 240px; box-shadow: 0 12px 40px rgba(0,0,0,.5);
+  }
+  .prov-menu[hidden] { display: none }
+  .prov-menu-label { display: block; font-size: 10px; font-weight: 600; color: var(--muted2); text-transform: uppercase; letter-spacing: .08em; font-family: 'JetBrains Mono', monospace; margin: 10px 0 8px }
+  .prov-menu-label:first-child { margin-top: 0 }
   .prov-grid { display: flex; gap: 6px }
   .prov-icon { border-radius: 3px; display: block; height: 14px; width: auto; max-width: 22px; object-fit: contain }
   .prov-icon-aws { height: 10px }
@@ -68,6 +96,38 @@ import { providers } from '../content/console.js';
   }
   .prov:hover { opacity: .85; background: var(--raised) }
   .prov.on { opacity: 1; border-color: var(--accent); background: var(--raised) }
+  .model-dd { position: relative }
+  .model-dd-btn {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    width: 100%; text-align: left; background: var(--panel2); border: 1px solid var(--line2);
+    border-radius: 9px; padding: 8px 11px; cursor: pointer; font-family: inherit; transition: .15s;
+  }
+  .model-dd-btn:hover { background: var(--raised) }
+  .model-dd-current { font-size: 12.5px; font-weight: 500; color: var(--text) }
+  .model-dd-caret { color: var(--muted2); flex-shrink: 0; transition: transform .15s }
+  .model-dd.open .model-dd-caret { transform: rotate(180deg) }
+  .model-dd-list {
+    position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 5;
+    background: var(--panel); border: 1px solid var(--line2); border-radius: 10px;
+    padding: 4px; box-shadow: 0 12px 32px rgba(0,0,0,.5);
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .model-dd-list[hidden] { display: none }
+  .model-dd-list :global(.model-opt) {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+    width: 100%; text-align: left; background: transparent; border: 1px solid transparent;
+    border-radius: 8px; padding: 7px 9px; cursor: pointer; font-family: inherit; transition: .12s;
+  }
+  .model-dd-list :global(.model-opt:hover) { background: var(--raised) }
+  .model-dd-list :global(.model-opt.on) { border-color: var(--accent); background: var(--raised) }
+  .model-dd-list :global(.model-name) { font-size: 12.5px; font-weight: 500; color: var(--text) }
+  .model-dd-list :global(.model-blurb) { font-size: 10.5px; color: var(--muted2) }
+  .prov-create {
+    margin-top: 12px; width: 100%; font-size: 12.5px; font-weight: 600; padding: 8px;
+    border-radius: 9px; background: var(--accent); border: none; color: var(--on-accent);
+    cursor: pointer; transition: .15s; font-family: inherit;
+  }
+  .prov-create:hover { filter: brightness(1.1) }
 
   .task-list { display: flex; flex-direction: column; gap: 4px }
   /* Task cards render at runtime via console.js: Astro scoping doesn't
@@ -124,4 +184,30 @@ import { providers } from '../content/console.js';
     background: var(--accent); border: none; color: var(--on-accent); cursor: pointer; transition: .15s;
   }
   .confirm-go:hover { filter: brightness(1.1) }
+
+  .palette { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 70; display: flex; justify-content: center; align-items: flex-start; padding: 14vh 24px 24px }
+  .palette[hidden] { display: none }
+  .palette-box {
+    background: var(--panel); border: 1px solid var(--line2); border-radius: 14px;
+    width: min(520px, 100%); overflow: hidden; box-shadow: 0 24px 60px rgba(0,0,0,.5);
+  }
+  .palette-input {
+    width: 100%; background: transparent; border: none; outline: none;
+    border-bottom: 1px solid var(--line); color: var(--text);
+    font-family: inherit; font-size: 14px; padding: 15px 18px;
+  }
+  .palette-input::placeholder { color: var(--muted2) }
+  .palette-list { max-height: 320px; overflow-y: auto; padding: 6px }
+  .palette-list :global(.p-row) {
+    display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+    background: transparent; border: none; border-radius: 9px; padding: 9px 12px;
+    cursor: pointer; font-family: inherit; transition: background .1s;
+  }
+  .palette-list :global(.p-row.on) { background: var(--raised) }
+  .palette-list :global(.p-main) { flex: 1; min-width: 0; display: block }
+  .palette-list :global(.p-title) { display: block; font-size: 13px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+  .palette-list :global(.p-sub) { display: block; font-size: 11px; color: var(--muted2); margin-top: 2px }
+  .palette-list :global(.p-state) { font-size: 10px; color: var(--muted); text-transform: capitalize; flex-shrink: 0 }
+  .palette-list :global(.p-empty) { padding: 18px; text-align: center; font-size: 12.5px; color: var(--muted2) }
+  .palette-foot { font-size: 10px; color: var(--muted2); padding: 9px 18px; border-top: 1px solid var(--line) }
 </style>

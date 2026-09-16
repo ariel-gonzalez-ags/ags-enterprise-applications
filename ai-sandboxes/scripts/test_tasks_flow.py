@@ -205,6 +205,24 @@ async def main():
         assert r.status_code == 422
         print("ok    provider: set at create, patched, invalid rejected (422)")
 
+        # 6g. model: selectable at create, patchable while shapeable, validated
+        r = await c.get("/api/models")
+        ids = {m["id"] for m in r.json()["models"]}
+        assert "gemini-3.6-flash" in ids and len(ids) >= 2, ids
+        r = await c.post("/api/tasks", json={"title": "mdl", "model": "gemini-3.1-flash-lite"})
+        assert r.json()["model"] == "gemini-3.1-flash-lite", r.json()
+        tidm = r.json()["id"]
+        r = await c.patch(f"/api/tasks/{tidm}", json={"model": "gemini-3.5-flash"})
+        assert r.json()["model"] == "gemini-3.5-flash"
+        r = await c.patch(f"/api/tasks/{tidm}", json={"model": "gpt-4"})
+        assert r.status_code == 422, r.status_code
+        r = await c.post("/api/tasks", json={"title": "bad", "model": "gpt-4"})
+        assert r.status_code == 422
+        # default when unspecified
+        r = await c.post("/api/tasks", json={"title": "dflt"})
+        assert r.json()["model"] == "gemini-3.6-flash", r.json()
+        print("ok    model: listed, set at create, patched, invalid rejected (422), default applied")
+
         # 6b. run narrated progress into the thread
         r = await c.get(f"/api/tasks/{tid}")
         notes = [m["text"] for m in r.json()["messages"] if m["role"] == "agent"]
@@ -212,10 +230,48 @@ async def main():
         assert any("checks green" in n for n in notes), notes
         print("ok    run posted progress + completion messages")
 
+        # 6f. SSE stream: verified against the LIVE stack (nginx + uvicorn),
+        # not the ASGI transport. httpx's ASGITransport cannot stream a
+        # StreamingResponse (Starlette's disconnect listener blocks on a
+        # receive() that never fires in the fake transport), so in-process
+        # streaming is not representative. The browser path is what matters;
+        # we exercise it here over real HTTP.
+        import httpx as _hx
+        live = os.environ.get("AGS_LIVE_URL", "").rstrip("/")
+        # The live api signs sessions with its own SESSION_SECRET (from
+        # .env.local), which the test's load() does not see. AGS_LIVE_COOKIE
+        # carries a cookie minted inside the live container for the stream.
+        live_cookie = os.environ.get("AGS_LIVE_COOKIE", "")
+        if live and live_cookie:
+            async with _hx.AsyncClient(base_url=live, timeout=None,
+                                       headers={"cookie": f"ags_session={live_cookie}"}) as lc:
+                rr = await lc.post("/api/tasks", json={"title": "sse-live"})
+                lid = rr.json()["id"]
+                seen, status = [], {}
+                async def _listen():
+                    async with lc.stream("GET", f"/api/tasks/{lid}/events") as resp:
+                        status["code"] = resp.status_code
+                        status["ct"] = resp.headers.get("content-type", "")
+                        async for line in resp.aiter_lines():
+                            if line.startswith("data:"):
+                                seen.append(line)
+                            if len(seen) >= 1:  # snapshot proves the stream flows
+                                break
+                task = asyncio.create_task(_listen())
+                await asyncio.wait_for(task, timeout=8)
+                assert status["code"] == 200, status
+                assert status["ct"].startswith("text/event-stream"), status
+                assert seen and '"changed": true' in seen[0], seen
+                print(f"ok    SSE stream (live): snapshot event received ({status['ct']})")
+        else:
+            print("skip  SSE live stream (set AGS_LIVE_URL + AGS_LIVE_COOKIE to run)")
+
         # 7. other user cannot see the task
         c.cookies.set("ags_session", _signed_cookie(settings, sub="user-2"))
         r = await c.get(f"/api/tasks/{tid}")
         assert r.status_code == 404, r.status_code
+        r = await c.get(f"/api/tasks/{tid}/events")
+        assert r.status_code == 404, r.status_code  # no cross-owner stream
         r = await c.get("/api/tasks")
         assert r.json()["tasks"] == []
         print("ok    tasks are scoped to their owner")

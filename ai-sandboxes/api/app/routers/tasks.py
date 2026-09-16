@@ -3,11 +3,11 @@ gated by the signed session cookie and scoped to the owning user."""
 import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from .. import db, planner, runner
+from .. import db, events, planner, runner
 from ..config import Settings
 from ..models import Artifact, Message, Task
 from ..session import get_session
@@ -32,6 +32,7 @@ def _task_json(t: Task, detail: bool = False) -> dict:
         "title": t.title,
         "state": t.state,
         "provider": t.provider,
+        "model": t.model,
         "formats": t.formats,
         "idempotent": t.idempotent,
         "checks": {"passed": t.checks_passed, "total": t.checks_total},
@@ -82,6 +83,14 @@ _PROVIDERS = {"azure", "aws", "gcp"}
 class CreateTask(BaseModel):
     title: str = Field(default="Untitled task", max_length=200)
     provider: str = Field(default="azure", max_length=16)
+    model: str | None = Field(default=None, max_length=40)
+
+
+@router.get("/models")
+async def list_models(user: dict = Depends(_user)):
+    """Planner models the user can pick from. Data-driven; the source of
+    truth is planner.MODELS."""
+    return {"models": planner.MODELS}
 
 
 @router.post("/tasks", status_code=201)
@@ -89,9 +98,12 @@ async def create_task(body: CreateTask, user: dict = Depends(_user)):
     provider = body.provider.strip().lower()
     if provider not in _PROVIDERS:
         raise HTTPException(422, f"provider must be one of {sorted(_PROVIDERS)}")
+    model = (body.model or "").strip()
+    if model and model not in planner.MODEL_IDS:
+        raise HTTPException(422, f"model must be one of {sorted(planner.MODEL_IDS)}")
     async with db.session() as s:
         t = Task(owner_sub=user["sub"], title=body.title.strip() or "Untitled task",
-                 provider=provider)
+                 provider=provider, model=model or "gemini-3.6-flash")
         s.add(t)
         await s.commit()
         return _task_json(t)
@@ -145,6 +157,7 @@ async def delete_task(task_id: str, user: dict = Depends(_user)):
 class PatchTask(BaseModel):
     formats: list[str] | None = Field(default=None)
     provider: str | None = Field(default=None, max_length=16)
+    model: str | None = Field(default=None, max_length=40)
 
 
 def _slug(raw: str) -> str:
@@ -179,8 +192,41 @@ async def patch_task(task_id: str, body: PatchTask, user: dict = Depends(_user))
             if provider not in _PROVIDERS:
                 raise HTTPException(422, f"provider must be one of {sorted(_PROVIDERS)}")
             t.provider = provider
+        if body.model is not None:
+            model = body.model.strip()
+            if model not in planner.MODEL_IDS:
+                raise HTTPException(422, f"model must be one of {sorted(planner.MODEL_IDS)}")
+            t.model = model
         await s.commit()
         return _task_json(t, detail=True)
+
+
+@router.get("/tasks/{task_id}/events")
+async def task_events(task_id: str, request: Request, user: dict = Depends(_user)):
+    """Server-sent events: one {"changed": true} nudge per state change. The
+    payload carries no data; the client re-fetches GET /tasks/{id} on each
+    nudge, so the stream can never drift from the DB. Ownership is checked
+    once up front (404 across owners, same as every other route)."""
+    async with db.session() as s:
+        t = await s.get(Task, task_id)
+        if t is None or t.owner_sub != user["sub"]:
+            raise HTTPException(404, "task not found")
+
+    async def gen():
+        try:
+            async for _ in events.subscribe(task_id):
+                yield "data: {\"changed\": true}\n\n"
+                if await request.is_disconnected():
+                    break
+        except asyncio.CancelledError:
+            # Client disconnected mid-stream; the finally block in
+            # events.subscribe() cleans up the subscription.
+            pass
+
+    return StreamingResponse(gen(), media_type="text/event-stream", headers={
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",  # don't let nginx buffer the stream
+    })
 
 
 class ChatIn(BaseModel):
@@ -196,9 +242,17 @@ async def _plan_in_background(task_id: str, settings: Settings) -> None:
         if t is None:
             return
         history = [{"role": m.role, "text": m.text} for m in t.messages]
+        model = t.model
+        state = {
+            "provider": t.provider,
+            "formats": list(t.formats or []),
+            "idempotent": t.idempotent,
+            "destroy_after": t.destroy_after,
+            "max_hours": t.max_hours,
+        }
 
     try:
-        out = await planner.reply(settings, history)
+        out = await planner.reply(settings, history, state, model)
         reply_text, title, plan = out["reply"], out["title"], out["plan"]
     except planner.PlannerUnavailable:
         reply_text, title, plan = (
@@ -225,6 +279,7 @@ async def _plan_in_background(task_id: str, settings: Settings) -> None:
                 t.max_hours = int(est)
         t.agent_pending = False
         await s.commit()
+        events.publish(task_id)
 
 
 @router.post("/tasks/{task_id}/messages", status_code=202)
@@ -245,6 +300,7 @@ async def chat(task_id: str, body: ChatIn, request: Request, user: dict = Depend
         s.add(Message(task_id=t.id, role="user", text=body.text.strip()))
         t.agent_pending = True
         await s.commit()
+        events.publish(task_id)
 
     asyncio.get_running_loop().create_task(_plan_in_background(task_id, settings))
     return {"accepted": True, "task_id": task_id}

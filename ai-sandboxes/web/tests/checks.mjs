@@ -55,14 +55,20 @@ check('app: console data hooks present', app.includes('data-console="send"') && 
 check('app: run inspector renders', app.includes('Guarantees') && app.includes('Idempotent result'));
 check('app: target-cloud picker in rail', app.includes('data-console="providers"') && app.includes('Target cloud'));
 check('app: no mock data shipped', !app.includes('ags_b3f58c') && !app.includes('OOMKill'));
-check('app: gate overlay present', app.includes('gate-overlay'));
+check('app: gate overlay present (no-JS fallback)', app.includes('gate-overlay'));
 check('app: gate script calls /api/auth/me', app.includes('/api/auth/me'));
 check('app: gate boots console.js for signed-in users', app.includes('/js/console.js'));
-check('app: gate has Google sign-in CTA', /\/api\/auth\/login\?next=\/app/.test(app) && app.includes('Sign in with Google'));
+check('app: gate redirects anonymous to /login', /location\.replace\(['`]\/login['`]\)/.test(app));
 check('app: console nav renders (not marketing nav)', app.includes('Search tasks') && !app.includes('How it works'));
 check('app: provider logos wired', ['/assets/providers/aws.svg', '/assets/providers/azure.svg', '/assets/providers/gcp.svg'].every((p) => app.includes(p)));
 check('app: theme bootstrap present', app.includes('ags-theme') && app.includes('prefers-color-scheme'));
 check('app: light theme tokens emitted', /data-theme=.?light/i.test(app));
+
+const login = read('login/index.html');
+check('login: centered card', login.includes('login-card'));
+check('login: brand mark present', login.includes('login-brand'));
+check('login: Google OAuth CTA', /\/api\/auth\/login\?next=\/app/.test(login));
+check('login: signed-in bounce to /app', /location\.replace\(['`]\/app['`]\)/.test(login));
 
 const consoleJs = read('js/console.js');
 check('asset: console.js is an IIFE', consoleJs.includes('(function () {'));

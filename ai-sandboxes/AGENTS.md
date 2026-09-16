@@ -32,8 +32,16 @@ the user before implementing**. See "Evolution path".
 - **Astro 7**, static output. Zero JavaScript ships to the browser beyond
   `public/js/auth.js`. Note: Astro 7 minifies inlined CSS (lowercase hex,
   no spaces): smoke tests must match tolerantly, not by exact bytes.
-  Astro 7 also **drops elements with `style="display:none"`** at build
-  time, use the `hidden` attribute instead (gate overlay in ConsoleShell).
+   Astro 7 also **drops elements with `style="display:none"`** at build
+   time, use the `hidden` attribute instead (gate overlay in ConsoleShell).
+   **Inline `<script>` bodies get quote-normalized to backticks** by the
+   bundler: smoke tests that assert on script contents must match with a
+   `['`]` character class, not an exact single-quoted string.
+   The sign-in screen is a dedicated page (`pages/login.astro`, copy in
+   `content/home.js` `login`): anonymous `/app` visitors are redirected
+   there by the gate script, and signed-in visitors to `/login` are bounced
+   back to `/app`. The `#gate` overlay in ConsoleShell is now only a no-JS
+   fallback linking to `/login`.
 - **No UI framework** (no React/Vue). Components are `.astro` files.
 - **No CSS framework** (no Tailwind). Hand-written CSS custom properties
   ("tokens") in `web/src/styles/`.
@@ -92,6 +100,7 @@ the user before implementing**. See "Evolution path".
 │       ├── models.py     ← Task/Message/Artifact (GUID task ids)
 │       ├── planner.py    ← Gemini via OpenAI-compat endpoint, JSON contract
 │       ├── runner.py     ← simulated sandbox run (asyncio state machine)
+│       ├── events.py     ← in-process pub/sub bus for SSE task updates
 │       ├── session.py    ← signed session cookie create/read/clear
 │       └── routers/      ← auth.py (Google OAuth) + tasks.py (product API)
 └── web/
@@ -106,7 +115,7 @@ the user before implementing**. See "Evolution path".
     │   ├── layouts/      ← Base.astro: <head>, fonts, global CSS, auth prop
     │   ├── styles/       ← tokens.css.astro (palette) + base.css.astro (primitives)
     │   ├── components/   ← one UI section per file, scoped styles
-    │   └── pages/        ← index.astro + app.astro (composition only)
+    │   └── pages/        ← index.astro + app.astro + login.astro (composition only)
     └── tests/checks.mjs  ← smoke tests against web/dist output
 ```
 
@@ -129,10 +138,11 @@ the user before implementing**. See "Evolution path".
 7. **The logo mark is sacred.** Defined once in `components/Logo.astro` and as
    static files in `public/assets/`. Never redraw or restyle it elsewhere. See
    "Brand system" below.
-8. **Client-side JS is an explicit exception, not a pattern.** The sanctioned
+ 8. **Client-side JS is an explicit exception, not a pattern.** The sanctioned
    scripts are `public/js/auth.js` (nav auth state), `public/js/console.js`
-   (/app data flow against `/api/tasks*`), and the gate script in
-   `pages/app.astro`. All are vanilla, IIFE/scoped, and only call `/api/*`.
+   (/app data flow against `/api/tasks*`), the gate script in
+   `pages/app.astro`, and the signed-in bounce in `pages/login.astro`. All
+   are vanilla, IIFE/scoped, and only call `/api/*`.
    console.js renders into `data-console="*"` hooks in the component shells;
    **any markup it injects needs `:global()` selectors in the component's
    `<style>`**: Astro scoping doesn't reach runtime DOM. Any further client
@@ -208,20 +218,81 @@ that. Marketing pages stay prerendered (static) regardless.
 | Endpoint | Purpose |
 |---|---|
 | `GET /api/tasks` | rail list (lightweight, no messages) |
-| `POST /api/tasks` `{title}` | create in `drafting`, returns the task |
+| `POST /api/tasks` `{title, provider, model}` | create in `drafting`, returns the task |
+| `GET /api/models` | planner models the user can pick (from `planner.MODELS`) |
 | `GET /api/tasks/{id}` | full detail: messages, artifacts, config |
 | `POST /api/tasks/{id}/messages` `{text}` | **202 instantly**; planner replies in background, lands in thread |
-| `PATCH /api/tasks/{id}` `{formats}` | user edits the accepted deliverable set (drafting/planned only); slugs, dedupes, min 1 |
+| `PATCH /api/tasks/{id}` `{formats, provider, model}` | user edits deliverables / target cloud / planner model (drafting/planned only); formats slug+dedupe (min 1), provider and model validated against allowlists |
 | `DELETE /api/tasks/{id}` | 204; drafting/planned only. running/verified/delivered are records: 409 |
 | `POST /api/tasks/{id}/approve` | `planned` → `running`, spawns the simulated run |
 | `GET /api/tasks/{id}/artifacts/{filename}` | artifact contents, owner-scoped; `Content-Disposition: attachment`, `no-store` |
+| `GET /api/tasks/{id}/events` | SSE stream; one `{"changed": true}` nudge per state change, owner-scoped |
 
 **Chat and runs are asynchronous by design.** The POST never waits on the
-LLM; it sets `agent_pending` and returns. Clients poll `GET /tasks/{id}`:
-`agent_pending: true` means a reply is coming, `state: running` means the
-sandbox is working. This decouples LLM latency and (eventually) multi-hour
-sandbox runs from any HTTP request. Don't reintroduce synchronous planner
-calls; if you need streaming, add SSE/websockets on top of this contract.
+LLM; it sets `agent_pending` and returns. Live updates flow over SSE: the
+console opens `GET /tasks/{id}/events` (an in-process pub/sub bus in
+`app/events.py`) while a task is live (`running` or `agent_pending`) and
+re-fetches the task on each `{"changed": true}` nudge. The nudge carries no
+payload, so the stream can never drift from the DB; the planner and runner
+call `events.publish(task_id)` after each commit. If SSE is unavailable or
+drops, the client falls back to polling `GET /tasks/{id}` every 3s. This
+decouples LLM latency and (eventually) multi-hour sandbox runs from any
+HTTP request. Don't reintroduce synchronous planner calls. The bus is
+single-node (one dict of asyncio queues); a multi-node swap means replacing
+it with Redis pub/sub behind the same interface.
+
+**The planner sees the task's current settings.** `planner.reply(settings,
+history, state, model)` injects a context message with the accepted deliverables,
+target cloud, and idempotent/destroy/max-hours values, so re-planning
+respects the plan-card toggles instead of reverting to a prior plan. The
+`model` arg is the per-task planner model from the New-task picker
+(`Task.model`, validated against `planner.MODELS`, default
+`gemini-3.6-flash`); the picker is data-driven from `GET /api/models`, so
+adding a model (or another provider later) is a list edit, not new routes.
+
+**Deliverable ids come from a canonical catalog, but custom is always open.**
+The catalog (`web/src/content/console.js` `outputFormats`, mirrored by
+`planner.CANONICAL_FORMATS` and `runner._FORMAT_FILES`) is the vocabulary the
+planner PREFERS when proposing a plan. It is a preference, not a constraint:
+the schema keeps `id` a free string (no enum), and a user-added custom
+deliverable is resolved to a real file by `planner.normalize_format`. Because
+prompt-steering alone is unreliable (the model emitted `Terraform_code`,
+`markdown_runbook`), `planner._canonical_id` snaps near-miss ids to the
+catalog after the model responds (underscores/case-insensitive, prefix/token
+match) while leaving genuine customs (opa-gatekeeper-policy) untouched. The
+catalog drives chip labels/kinds and artifact filenames; adding a known
+format is a data edit in `outputFormats` + a filename in `_FORMAT_FILES`.
+
+**The match-exactly rule only applies once the user has chosen deliverables.**
+`_context_message` branches on `state.formats`: when it is non-empty, the
+planner is told the deliverables list MUST match that set exactly (so toggles
+stick); when it is empty (a fresh task), the planner is instead told to propose
+the sensible set and never return an empty list. Enforcing "match exactly"
+against an empty set made every first plan come back with `deliverables: []`
+(the planner obeyed, seeded nothing, and stayed stuck), which surfaced in the
+UI as a plan card with no Terraform/Ansible/Markdown chips. Keep the empty-set
+branch permissive.
+
+**Output is enforced by JSON schema, not prose.** Gemini 3.x are reasoning
+models that ignore a prose-only format instruction; `planner` sends
+`_PLAN_RESPONSE_FORMAT` (a `json_schema`) so the `{reply, title, plan}`
+shape is mandatory. `max_tokens` is 3000 because reasoning tokens count
+against the budget.
+
+**The typing effect is client-side and model-agnostic.** Reasoning models
+buffer the whole reply (no incremental token stream), so `console.js`
+reveals the newest agent reply progressively (faux-typing) after it lands.
+The effect is independent of which model produced the text; the plan card
+pops in once the text finishes (structured JSON cannot render half-formed).
+
+**Plan-card UI conventions in console.js.** Two things that are easy to get
+wrong: (1) the New-task target-cloud highlight is driven only by the stored
+pick (`localStorage` `ags-provider`), never by the selected task's provider,
+otherwise the highlight snaps back to the task and the click looks dead. (2)
+Each plan-card deliverable chip keeps its "why" rationale collapsed behind an
+`.opt-info` toggle so the card stays compact; that toggle must not flip the
+checkbox or fire the PATCH (the thread click handler returns early on
+`.opt-info`).
 
 All gated by the session cookie, scoped to `owner_sub` (404 across owners,
 not 403, don't leak existence). Task JSON shape: `{id (GUID), title, state,
@@ -244,10 +315,13 @@ Operational gotchas:
   like `/app` → `/app/` carry the container port (8080) and browsers hit
   connection-refused, because the host maps 8090→8080. Never re-enable
   absolute redirects while behind a port mapping.
-- nginx `proxy_read_timeout` is 120s on `/api/` because planner chat waits
-  on an LLM round-trip. The planner client self-caps at 90s (one retry) so
-  the worst case is an in-chat degradation message, not a 504. If you lower
-  the nginx value, lower the planner's first.
+- nginx `proxy_read_timeout` is 300s on `/api/` and `proxy_buffering` is
+  off there: the SSE stream (`/tasks/{id}/events`) is long-lived and must
+  not be buffered, and planner chat waits on an LLM round-trip. The planner
+  client self-caps at 90s (one retry) so the worst case is an in-chat
+  degradation message, not a 504. The app also sends `X-Accel-Buffering:
+  no` on the stream. If you lower the nginx timeout, lower the planner's
+  first.
 
 ## Workflow
 

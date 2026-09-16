@@ -28,11 +28,21 @@
   var CHECK_SVG = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
   var PLUS_SVG = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
 
+  // Display sugar for the canonical catalog (mirrors content/console.js
+  // outputFormats). Unknown ids fall through: label = the raw id, kind =
+  // "custom". The catalog is a preference, not a constraint, so any id the
+  // planner or user supplies still renders.
   var FORMAT_LABELS = {
     terraform: 'Terraform', ansible: 'Ansible', arm: 'ARM / Bicep',
-    bash: 'Bash', powershell: 'PowerShell', markdown: 'Markdown runbook',
+    helm: 'Helm chart', kubernetes: 'Kubernetes manifests', dockerfile: 'Dockerfile',
+    bash: 'Bash', powershell: 'PowerShell', python: 'Python',
+    json: 'JSON policy', yaml: 'YAML config', markdown: 'Markdown runbook',
   };
-  var FORMAT_KINDS = { terraform: 'iac', ansible: 'iac', arm: 'iac', bash: 'script', powershell: 'script', markdown: 'doc' };
+  var FORMAT_KINDS = {
+    terraform: 'iac', ansible: 'iac', arm: 'iac', helm: 'iac', kubernetes: 'iac', dockerfile: 'iac',
+    bash: 'script', powershell: 'script', python: 'script',
+    json: 'config', yaml: 'config', markdown: 'doc',
+  };
   var formatLabel = function (id) { return FORMAT_LABELS[id] || id; };
   var formatKind = function (id) { return FORMAT_KINDS[id] || 'custom'; };
 
@@ -40,6 +50,7 @@
   var selected = null;      // full detail of the selected task
   var selectedId = null;
   var pollTimer = null;
+  var eventSrc = null;      // EventSource for the selected task, when supported
   var busy = false;
 
   /* ---------- helpers ---------- */
@@ -56,6 +67,9 @@
         err.status = r.status;
         throw err;
       }
+      // 204 No Content (e.g. DELETE) has no body; parsing it as JSON throws
+      // "Unexpected end of JSON input". Return undefined for empty responses.
+      if (r.status === 204) return undefined;
       return r.json();
     });
   }
@@ -134,7 +148,14 @@
       var id = del.getAttribute('data-del');
       var doDelete = function () {
         api('/api/tasks/' + encodeURIComponent(id), { method: 'DELETE' }).then(function () {
-          if (selectedId === id) { selected = null; selectedId = null; renderAll(); }
+          if (selectedId === id) {
+            // Clear the view FIRST so nothing below can leave a stale chat
+            // on screen, then tear down the dead task's stream (defensive:
+            // a stream error must never block the clear).
+            selected = null; selectedId = null;
+            try { closeStream(); } catch (e) { /* stream teardown is best-effort */ }
+            renderAll();
+          }
           refreshList();
         }).catch(function () { refreshList(); });
       };
@@ -155,11 +176,18 @@
 
   function optRow(id, why, on, editable) {
     var tag = editable ? 'button' : 'div';
+    // The rationale stays collapsed behind an info toggle so the card reads as
+    // compact chips; expanding shows the "why" under the name.
+    var info = why
+      ? '<span class="opt-info" data-info role="button" tabindex="-1" title="Why this deliverable">' +
+        '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg></span>'
+      : '';
     return '<' + tag + ' class="opt' + (on ? ' on' : '') + '" data-format="' + esc(id) + '"' +
       (editable ? ' type="button"' : '') + '>' +
       '<span class="opt-check">' + (on ? CHECK_SVG : '') + '</span>' +
       '<span class="opt-name">' + esc(formatLabel(id)) + ' <span class="opt-kind mono">' + esc(formatKind(id)) + '</span></span>' +
-      '<span class="opt-why">' + esc(why || '') + '</span></' + tag + '>';
+      info +
+      '<span class="opt-why" hidden>' + esc(why || '') + '</span></' + tag + '>';
   }
 
   function planCard(plan, editable) {
@@ -205,14 +233,57 @@
         ? '<div class="msg-agent-tag mono">planner agent</div>' : '';
       var card = (m.role === 'agent' && m.plan)
         ? planCard(m.plan, editable && i === latestPlanIdx) : '';
-      return '<div class="msg ' + m.role + '">' + tag +
-        '<div class="msg-body">' + esc(m.text) + '</div>' + card + '</div>';
+      // The newest agent reply types out (see below): render its body empty
+      // and let the typewriter fill it, so SSE re-renders do not fight it.
+      var isNewestAgent = m.role === 'agent' && i === selected.messages.length - 1;
+      var body = (isNewestAgent && shouldType(m)) ? '' : esc(m.text);
+      return '<div class="msg ' + m.role + '"' + (isNewestAgent ? ' data-console="latest-agent"' : '') + '>' + tag +
+        '<div class="msg-body">' + body + '</div>' + card + '</div>';
     }).join('');
     // Planner is composing a reply that hasn't landed yet: show the bubble.
     if (selected.agent_pending) {
       appendPending('planning…');
     }
     thread.scrollTop = thread.scrollHeight;
+    startTyping();
+  }
+
+  /* ---------- typing effect (model-agnostic) ----------
+   * The planner returns a complete reply (reasoning models buffer, so true
+   * token streaming is not available). We reveal the newest agent reply
+   * progressively instead. The effect lives entirely client-side, so it
+   * behaves identically no matter which model produced the text. The plan
+   * card pops in once the text finishes (it is structured JSON, it cannot
+   * render half-formed). */
+
+  var typedKeys = {};      // message keys already fully typed
+  var typeTimer = null;
+
+  function msgKey(m) { return m.at + '|' + m.text.length; }
+  function shouldType(m) { return !typedKeys[msgKey(m)] && m.text.length >= 24; }
+
+  function startTyping() {
+    var el = thread.querySelector('[data-console="latest-agent"] .msg-body');
+    if (!el || !selected) return;
+    var last = selected.messages[selected.messages.length - 1];
+    if (!last || last.role !== 'agent' || !shouldType(last)) return;
+    typedKeys[msgKey(last)] = true;  // mark before starting so re-renders show full text
+    var full = last.text;
+    if (typeTimer) { clearInterval(typeTimer); typeTimer = null; }
+    var i = 0;
+    var step = Math.max(2, Math.round(full.length / 50));  // ~50 frames, ~0.8s
+    typeTimer = setInterval(function () {
+      // If a re-render replaced the node, stop; the next render shows it full.
+      if (!el.isConnected) { clearInterval(typeTimer); typeTimer = null; return; }
+      i += step;
+      if (i >= full.length) {
+        el.textContent = full;
+        clearInterval(typeTimer); typeTimer = null;
+        return;
+      }
+      el.textContent = full.slice(0, i);
+      thread.scrollTop = thread.scrollHeight;
+    }, 16);
   }
 
   function appendPending(text) {
@@ -228,6 +299,18 @@
   // Plan card interactions: toggling options / adding a custom deliverable
   // PATCHes the task's accepted format set. Optimistic paint, server truth.
   thread.addEventListener('click', function (e) {
+    // The info toggle expands/collapses the rationale only; it must not flip
+    // the deliverable checkbox or fire the PATCH.
+    var info = e.target.closest('.opt-info');
+    if (info) {
+      var row = info.closest('.opt[data-format]');
+      if (row) {
+        var why = row.querySelector('.opt-why');
+        if (why) why.hidden = !why.hidden;
+        info.classList.toggle('open');
+      }
+      return;
+    }
     var opt = e.target.closest('.choice-card.editable .opt[data-format]');
     if (!opt || opt.tagName !== 'BUTTON') return;
     var on = opt.classList.toggle('on');
@@ -272,29 +355,122 @@
 
   /* ---------- target-cloud picker (rail) ---------- */
 
-  // Reflect the selected task's provider; clicking while the task is
-  // shapeable PATCHes it. The picker also sets the provider for New task.
+  /* ---------- provider + model picker (dropdown under "New task") ---------- */
+
+  var provMenu = document.querySelector('[data-console="prov-menu"]');
+  var modelDd = provMenu ? provMenu.querySelector('.model-dd') : null;
+  var modelBtn = document.querySelector('[data-console="model-btn"]');
+  var modelCurrent = document.querySelector('[data-console="model-current"]');
+  var modelList = document.querySelector('[data-console="models"]');
+  var createBtn = document.querySelector('[data-console="create-task"]');
+  var availModels = [];   // from GET /api/models
+  var pickedModel = localStorage.getItem('ags-model') || 'gemini-3.6-flash';
+
+  function closeProvMenu() {
+    if (provMenu) provMenu.hidden = true;
+    newBtn.setAttribute('aria-expanded', 'false');
+    closeModelList();
+  }
+  function toggleProvMenu() {
+    var open = provMenu.hidden;
+    provMenu.hidden = !open;
+    newBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) { renderProviders(); renderModels(); syncModelBtn(); }
+  }
+
   function renderProviders() {
     var provs = provGrid.querySelectorAll('.prov');
-    var current = selected ? selected.provider : (localStorage.getItem('ags-provider') || 'azure');
+    // The picker is always driven by the stored pick, never by the selected
+    // task: otherwise a click updates localStorage but the highlight snaps
+    // back to the task's provider, looking like the click did nothing.
+    var current = localStorage.getItem('ags-provider') || 'azure';
     for (var i = 0; i < provs.length; i++) {
       provs[i].classList.toggle('on', provs[i].getAttribute('data-prov') === current);
     }
   }
 
+  function modelName(id) {
+    var m = availModels.find(function (x) { return x.id === id; });
+    return m ? m.name : id;
+  }
+  function syncModelBtn() { modelCurrent.textContent = modelName(pickedModel); }
+
+  function closeModelList() {
+    modelList.hidden = true;
+    modelDd.classList.remove('open');
+    modelBtn.setAttribute('aria-expanded', 'false');
+  }
+  function toggleModelList() {
+    var open = modelList.hidden;
+    modelList.hidden = !open;
+    modelDd.classList.toggle('open', open);
+    modelBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) renderModels();
+  }
+
+  function renderModels() {
+    if (!availModels.length) { modelList.innerHTML = '<p class="p-empty">loading…</p>'; return; }
+    modelList.innerHTML = availModels.map(function (m) {
+      return '<button class="model-opt' + (m.id === pickedModel ? ' on' : '') + '" data-model="' + esc(m.id) + '" type="button">' +
+        '<span class="model-name">' + esc(m.name) + '</span>' +
+        '<span class="model-blurb">' + esc(m.blurb) + '</span></button>';
+    }).join('');
+  }
+
+  // Load the selectable planner models once.
+  api('/api/models').then(function (d) {
+    availModels = d.models || [];
+    if (!availModels.some(function (m) { return m.id === pickedModel; })) {
+      pickedModel = availModels.length ? availModels[0].id : pickedModel;
+    }
+    syncModelBtn();
+  }).catch(function () {});
+
   provGrid.addEventListener('click', function (e) {
     var btn = e.target.closest('.prov');
     if (!btn) return;
-    var prov = btn.getAttribute('data-prov');
-    localStorage.setItem('ags-provider', prov);
-    if (selected && (selected.state === 'drafting' || selected.state === 'planned')) {
-      api('/api/tasks/' + encodeURIComponent(selectedId), {
-        method: 'PATCH', body: JSON.stringify({ provider: prov }),
-      }).then(function (t) { selected = t; renderAll(); refreshList(); })
-        .catch(function () { select(selectedId); });
-    } else {
-      renderProviders();
-    }
+    localStorage.setItem('ags-provider', btn.getAttribute('data-prov'));
+    renderProviders();
+  });
+
+  modelBtn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    toggleModelList();
+  });
+
+  modelList.addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-model]');
+    if (!btn) return;
+    pickedModel = btn.getAttribute('data-model');
+    localStorage.setItem('ags-model', pickedModel);
+    syncModelBtn();
+    closeModelList();  // collapse back to the single-line selector
+  });
+
+  createBtn.addEventListener('click', function () {
+    var prov = localStorage.getItem('ags-provider') || 'azure';
+    closeProvMenu();
+    createTask(prov, pickedModel);
+  });
+
+  newBtn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    toggleProvMenu();
+  });
+
+  // Clicking anywhere outside the picker closes it.
+  document.addEventListener('click', function (e) {
+    if (!provMenu || provMenu.hidden) return;
+    // Use the menu itself, not e.target.closest(): clicking a model option
+    // re-renders the list (innerHTML), which detaches the clicked node, so
+    // closest() on that stale element would wrongly report "outside".
+    if (provMenu.contains(e.target) || e.target.closest('.new-btn')) return;
+    closeProvMenu();
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    if (modelList && !modelList.hidden) { closeModelList(); return; }
+    if (provMenu && !provMenu.hidden) closeProvMenu();
   });
 
   /* ---------- inspector ---------- */
@@ -396,14 +572,19 @@
     return api('/api/tasks/' + encodeURIComponent(id)).then(function (t) {
       selected = t;
       renderAll();
-      schedulePoll();
+      // Live updates: stream state changes, fall back to polling if SSE is
+      // unavailable. Tasks that are neither running nor awaiting a planner
+      // reply have no live phase, so nothing to stream.
+      if (t.state === 'running' || t.agent_pending) openStream();
+      else closeStream();
     });
   }
 
   function schedulePoll() {
     if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
-    // Poll while the planner is replying or the sandbox is running: the
-    // server owns both timelines; the client just refreshes state.
+    // Fallback only: when SSE is unavailable or the stream dropped, poll
+    // while the planner is replying or the sandbox is running. The stream
+    // is the primary channel; this keeps the UI correct without it.
     if (selected && (selected.state === 'running' || selected.agent_pending)) {
       pollTimer = setTimeout(function () {
         select(selectedId).then(refreshList);
@@ -411,15 +592,46 @@
     }
   }
 
-  newBtn.addEventListener('click', function () {
+  /* ---------- live updates via SSE (with polling fallback) ---------- */
+
+  function openStream() {
+    closeStream();
+    if (!selectedId || typeof EventSource === 'undefined') { schedulePoll(); return; }
+    var es = new EventSource('/api/tasks/' + encodeURIComponent(selectedId) + '/events');
+    eventSrc = es;
+    es.onmessage = function () {
+      if (!selectedId) return;
+      // A nudge means state changed; re-fetch the task. Once the task is no
+      // longer running or awaiting a planner reply, the live phase is over:
+      // close the stream rather than hold a connection per task forever.
+      api('/api/tasks/' + encodeURIComponent(selectedId)).then(function (t) {
+        if (t.id !== selectedId) return;
+        selected = t;
+        renderAll();
+        refreshList();
+        if (!(t.state === 'running' || t.agent_pending)) closeStream();
+      }).catch(function () {});
+    };
+    es.onerror = function () {
+      // Stream failed or was rejected: fall back to polling.
+      closeStream();
+      schedulePoll();
+    };
+  }
+
+  function closeStream() {
+    if (eventSrc) { eventSrc.close(); eventSrc = null; }
+    if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+  }
+
+  function createTask(prov, model) {
     if (busy) return;
     busy = true;
-    var prov = localStorage.getItem('ags-provider') || 'azure';
-    api('/api/tasks', { method: 'POST', body: JSON.stringify({ title: '', provider: prov }) })
+    api('/api/tasks', { method: 'POST', body: JSON.stringify({ title: '', provider: prov, model: model }) })
       .then(function (t) { return refreshList().then(function () { return select(t.id); }); })
       .catch(function () { /* surfaced by gate if auth broke */ })
       .then(function () { busy = false; input.focus(); });
-  });
+  }
 
   function send() {
     var text = input.value.trim();
@@ -458,6 +670,74 @@
       .then(function () { return select(selectedId).then(refreshList); })
       .catch(function () {})
       .then(function () { busy = false; });
+  });
+
+  /* ---------- command palette (search your tasks) ---------- */
+
+  var paletteEl = document.querySelector('[data-console="palette"]');
+  var paletteInput = document.querySelector('[data-console="palette-input"]');
+  var paletteList = document.querySelector('[data-console="palette-list"]');
+  var navSearch = document.querySelector('[data-console="nav-search"]');
+  var palIdx = 0;
+
+  function paletteMatches() {
+    var q = paletteInput.value.trim().toLowerCase();
+    if (!q) return tasks.slice();
+    return tasks.filter(function (t) {
+      return t.title.toLowerCase().indexOf(q) !== -1 ||
+        t.id.toLowerCase().indexOf(q) !== -1 ||
+        t.state.toLowerCase().indexOf(q) !== -1 ||
+        (t.provider || '').toLowerCase().indexOf(q) !== -1;
+    });
+  }
+
+  function renderPalette() {
+    var rows = paletteMatches();
+    if (palIdx >= rows.length) palIdx = Math.max(0, rows.length - 1);
+    if (!rows.length) {
+      paletteList.innerHTML = '<p class="p-empty">No tasks match.</p>';
+      return;
+    }
+    paletteList.innerHTML = rows.map(function (t, i) {
+      return '<button class="p-row' + (i === palIdx ? ' on' : '') + '" data-pal="' + esc(t.id) + '" type="button">' +
+        '<span class="p-main"><span class="p-title">' + esc(t.title) + '</span>' +
+        '<span class="p-sub mono">' + esc(t.id.slice(0, 8)) + ' · ' + esc(t.provider) + '</span></span>' +
+        '<span class="p-state">' + esc(t.state) + '</span></button>';
+    }).join('');
+  }
+
+  function openPalette() {
+    paletteEl.hidden = false;
+    paletteInput.value = '';
+    palIdx = 0;
+    renderPalette();
+    paletteInput.focus();
+  }
+  function closePalette() { paletteEl.hidden = true; }
+  function paletteOpen() { return !paletteEl.hidden; }
+  function paletteGo(id) { closePalette(); select(id); }
+
+  if (navSearch) navSearch.addEventListener('click', openPalette);
+  paletteInput.addEventListener('input', function () { palIdx = 0; renderPalette(); });
+  paletteList.addEventListener('click', function (e) {
+    var row = e.target.closest('[data-pal]');
+    if (row) paletteGo(row.getAttribute('data-pal'));
+  });
+  paletteEl.addEventListener('click', function (e) { if (e.target === paletteEl) closePalette(); });
+
+  document.addEventListener('keydown', function (e) {
+    var mod = e.metaKey || e.ctrlKey;
+    if (mod && (e.key === 'k' || e.key === 'K')) {
+      e.preventDefault();
+      if (paletteOpen()) closePalette(); else openPalette();
+      return;
+    }
+    if (!paletteOpen()) return;
+    if (e.key === 'Escape') { closePalette(); return; }
+    var rows = paletteMatches();
+    if (e.key === 'ArrowDown') { e.preventDefault(); palIdx = Math.min(rows.length - 1, palIdx + 1); renderPalette(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); palIdx = Math.max(0, palIdx - 1); renderPalette(); }
+    else if (e.key === 'Enter') { e.preventDefault(); if (rows[palIdx]) paletteGo(rows[palIdx].id); }
   });
 
   /* ---------- boot ---------- */

@@ -26,6 +26,10 @@ async def create_schema() -> None:
             await conn.execute(
                 text("ALTER TABLE tasks ADD COLUMN agent_pending BOOLEAN NOT NULL DEFAULT 0")
             )
+        if "model" not in cols:
+            await conn.execute(
+                text("ALTER TABLE tasks ADD COLUMN model VARCHAR(40) NOT NULL DEFAULT 'gemini-3.6-flash'")
+            )
 
 
 def session() -> AsyncSession:

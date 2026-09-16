@@ -5,7 +5,7 @@ the swap point is run_task() itself. Progress is posted as agent messages so
 the thread narrates the run (real executors will do the same)."""
 import asyncio
 
-from . import db
+from . import db, events
 from .models import Artifact, Message, Task
 
 _TICK_SECONDS = 3  # dev-friendly; real runs will be event-driven
@@ -16,10 +16,15 @@ _FORMAT_FILES = {
     "terraform": ("main.tf", "8.2 KB", "winning configuration, fully idempotent"),
     "ansible": ("harden.yml", "5.7 KB", "idempotent playbook, check-mode clean"),
     "arm": ("main.bicep", "4.3 KB", "compiled clean, what-if empty"),
+    "helm": ("chart.tgz", "9.6 KB", "lint clean, template renders"),
+    "kubernetes": ("manifests.yaml", "6.8 KB", "validated, dry-run apply clean"),
+    "dockerfile": ("Dockerfile", "1.8 KB", "multi-stage, hadolint clean"),
     "bash": ("setup.sh", "2.1 KB", "set -euo pipefail, rerunnable"),
     "powershell": ("Setup.ps1", "2.4 KB", "idempotent, supports -WhatIf"),
-    "markdown": ("runbook.md", "6.4 KB", "what ran, evidence, how to re-verify"),
+    "python": ("run.py", "3.3 KB", "typed, idempotent, exit-coded"),
     "json": ("policy.json", "3.1 KB", "definition + assignment, validated"),
+    "yaml": ("config.yaml", "2.7 KB", "schema-validated"),
+    "markdown": ("runbook.md", "6.4 KB", "what ran, evidence, how to re-verify"),
 }
 _ALWAYS = [("verify.sh", "bash", "0.9 KB", "rerun the acceptance checks anywhere")]
 
@@ -92,6 +97,7 @@ async def run_task(task_id: str, settings=None) -> None:
         await _say(s, task_id,
                    f"Sandbox is up on {task.provider}. Running {total} acceptance checks.")
         await s.commit()
+        events.publish(task_id)
 
     for passed in range(1, total + 1):
         await asyncio.sleep(_TICK_SECONDS)
@@ -103,6 +109,7 @@ async def run_task(task_id: str, settings=None) -> None:
             if passed == total // 2:
                 await _say(s, task_id, f"Halfway: {passed}/{total} checks green.")
             await s.commit()
+            events.publish(task_id)
 
     async with db.session() as s:
         task = await s.get(Task, task_id)
@@ -131,6 +138,7 @@ async def run_task(task_id: str, settings=None) -> None:
                    f"All {total} checks green. {len(seen)} artifacts delivered; "
                    "sandbox is torn down, evidence kept.")
         await s.commit()
+        events.publish(task_id)
 
 
 def spawn(task_id: str, settings=None) -> None:
