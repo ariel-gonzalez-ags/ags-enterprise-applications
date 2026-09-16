@@ -155,8 +155,9 @@ async def reply(settings: Settings, history: list[dict], state: dict | None = No
             temperature=0.3,
             # Gemini 3.x is a reasoning model: it spends tokens "thinking"
             # before the JSON, so the cap must cover reasoning + the reply.
-            # 1400 was tuned for 2.5-flash (no reasoning); 3000 leaves room.
-            max_tokens=3000,
+            # Generous ceiling (50k) so reasoning over a long thread never
+            # truncates the plan; a normal reply still uses only ~150 tokens.
+            max_tokens=50000,
             response_format=_PLAN_RESPONSE_FORMAT,
         )
         choice = resp.choices[0]
