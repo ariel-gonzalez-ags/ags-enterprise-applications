@@ -4,17 +4,18 @@
 ---
 <style is:global>
   :root {
-    /* Elevation scale — 4 clearly separated dark shades, deepest at the bottom:
-       bg (page) < panel (rails) < panel2 (cards/bubbles) < raised (hover/active) */
-    --bg: #070605;
-    --panel: #0F0D0A;
-    --panel2: #191512;
-    --raised: #231D17;
-    --line: #211B14;
-    --line2: #322821;
-    --text: #F2EDE8;
-    --muted: #A09385;
-    --muted2: #6E6257;
+    /* Elevation scale — 4 clearly separated shades, neutral graphite:
+       bg (page) < panel (rails) < panel2 (cards/bubbles) < raised (hover/active).
+       Surfaces carry no orange cast — ember only appears as --accent. */
+    --bg: #08080A;
+    --panel: #101013;
+    --panel2: #17171C;
+    --raised: #202027;
+    --line: #232329;
+    --line2: #33333C;
+    --text: #F0EFEC;
+    --muted: #9D9DA8;
+    --muted2: #6A6A76;
     --accent: #F05623;          /* magma ember — signal only, never decoration */
     --accent-dim: rgba(240, 86, 35, .12);
     --warn: #FFB184;
@@ -23,30 +24,29 @@
     --radius: 14px;
     --shadow: rgba(0, 0, 0, .5);
     --on-accent: #160802;   /* text on solid ember */
-    --scrim: rgba(6, 5, 4, .88);
-    --scrim-nav: rgba(6, 5, 4, .72);
+    --scrim: rgba(8, 8, 10, .88);
+    --scrim-nav: rgba(8, 8, 10, .72);
     color-scheme: dark;
   }
 
   [data-theme='light'] {
-    /* Light "ash" theme — same warm hue family, inverted elevation:
-       paper bg, white-ish panels, warm gray lines. Accent stays ember. */
-    --bg: #F4F1ED;
+    /* Light "paper" theme — neutral warm-gray inversion of the dark scale. */
+    --bg: #F3F3F4;
     --panel: #FFFFFF;
-    --panel2: #FAF7F4;
-    --raised: #EFE9E3;
-    --line: #E7E0D9;
-    --line2: #D5CCC2;
-    --text: #231D17;
-    --muted: #6E6257;
-    --muted2: #9A8C7F;
+    --panel2: #F8F8F9;
+    --raised: #EDEDEF;
+    --line: #E4E4E7;
+    --line2: #D2D2D8;
+    --text: #1D1D22;
+    --muted: #5F5F6A;
+    --muted2: #8E8E99;
     --accent: #D8440F;          /* slightly deeper for contrast on light */
     --accent-dim: rgba(216, 68, 15, .10);
     --warn: #B45A1B;
-    --shadow: rgba(35, 29, 23, .18);
+    --shadow: rgba(29, 29, 34, .15);
     --on-accent: #FFFFFF;
-    --scrim: rgba(244, 241, 237, .9);
-    --scrim-nav: rgba(244, 241, 237, .8);
+    --scrim: rgba(243, 243, 244, .9);
+    --scrim-nav: rgba(243, 243, 244, .8);
     color-scheme: light;
   }
   * { box-sizing: border-box; margin: 0; padding: 0 }
