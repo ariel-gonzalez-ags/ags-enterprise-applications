@@ -1,7 +1,6 @@
 ---
 // Right inspector: run configuration (providers, formats, guarantees)
 // and the artifacts this run will produce / has produced.
-import ProviderIcon from './ProviderIcon.astro';
 import Icon from './Icon.astro';
 import { providers, outputFormats, defaultRunConfig, artifacts } from '../content/console.js';
 ---
@@ -12,7 +11,7 @@ import { providers, outputFormats, defaultRunConfig, artifacts } from '../conten
     <div class="prov-grid">
       {providers.map((p) => (
         <button class={`prov ${defaultRunConfig.providers.includes(p.id) ? 'on' : ''}`}>
-          <ProviderIcon id={p.id} size={16} /> {p.name}
+          <img src={`/assets/providers/${p.id}.svg`} alt={p.name} class="prov-icon" /> {p.name}
         </button>
       ))}
     </div>
@@ -83,24 +82,25 @@ import { providers, outputFormats, defaultRunConfig, artifacts } from '../conten
   .hint.foot { margin: 12px 0 0 }
 
   .prov-grid { display: flex; gap: 8px }
+  .prov-icon { border-radius: 3px; display: block; height: 13px; width: auto; max-width: 22px; object-fit: contain }
   .prov {
     flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 7px;
     padding: 9px 6px; font-size: 12.5px; font-weight: 500; border-radius: 10px;
-    background: transparent; border: 1px solid var(--line2); color: var(--muted); cursor: pointer;
-    transition: .2s;
+    background: var(--panel2); border: 1px solid var(--line2); color: var(--muted); cursor: pointer;
+    transition: .15s;
   }
-  .prov:hover { color: var(--text) }
-  .prov.on { border-color: #57301A; color: var(--text) }
+  .prov:hover { color: var(--text); background: var(--raised) }
+  .prov.on { background: var(--raised); border-color: var(--line2); color: var(--text) }
 
   .fmt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px }
   .fmt {
     display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
     padding: 9px 11px; font-size: 12.5px; border-radius: 10px; text-align: left;
-    background: transparent; border: 1px solid var(--line2); color: var(--muted); cursor: pointer;
-    transition: .2s;
+    background: var(--panel2); border: 1px solid var(--line2); color: var(--muted); cursor: pointer;
+    transition: .15s;
   }
-  .fmt:hover { color: var(--text) }
-  .fmt.on { border-color: #57301A; color: var(--text) }
+  .fmt:hover { color: var(--text); background: var(--raised) }
+  .fmt.on { background: var(--raised); color: var(--text) }
   .fmt-kind { font-size: 9.5px; color: var(--muted2); text-transform: uppercase; letter-spacing: .05em }
   .fmt.on .fmt-kind { color: var(--muted) }
 
@@ -117,7 +117,7 @@ import { providers, outputFormats, defaultRunConfig, artifacts } from '../conten
   .toggle.on .knob { left: 17px; background: #160802 }
 
   .art-list { display: flex; flex-direction: column; gap: 8px }
-  .art { background: transparent; border: 1px solid var(--line2); border-radius: 10px; padding: 10px 12px }
+  .art { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px }
   .art-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px }
   .art-name { font-size: 12px; color: var(--text) }
   .art-size { font-size: 10.5px; color: var(--muted2) }

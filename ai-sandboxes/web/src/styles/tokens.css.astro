@@ -4,15 +4,18 @@
 ---
 <style is:global>
   :root {
-    --bg: #060504;
-    --panel: #0C0A08;
-    --panel2: #12100D;
-    --line: #1E1812;
-    --line2: #2B2118;
+    /* Elevation scale — 4 clearly separated dark shades, deepest at the bottom:
+       bg (page) < panel (rails) < panel2 (cards/bubbles) < raised (hover/active) */
+    --bg: #070605;
+    --panel: #0F0D0A;
+    --panel2: #191512;
+    --raised: #231D17;
+    --line: #211B14;
+    --line2: #322821;
     --text: #F2EDE8;
-    --muted: #98897E;
-    --muted2: #655950;
-    --accent: #F05623;          /* magma ember */
+    --muted: #A09385;
+    --muted2: #6E6257;
+    --accent: #F05623;          /* magma ember — signal only, never decoration */
     --accent-dim: rgba(240, 86, 35, .12);
     --warn: #FFB184;
     --red: #E5484D;

@@ -44,13 +44,13 @@ const stateMeta = Object.fromEntries(taskStates.map((s) => [s.id, s]));
   }
   .new-btn:hover { color: var(--text); border-color: #57301A }
 
-  .task-list { display: flex; flex-direction: column; gap: 10px }
+  .task-list { display: flex; flex-direction: column; gap: 4px }
   .task {
     display: block; background: transparent; border: 1px solid transparent;
-    border-radius: 12px; padding: 12px 14px; transition: .2s;
+    border-radius: 12px; padding: 12px 14px; transition: .15s;
   }
   .task:hover { background: var(--panel2) }
-  .task.active { background: var(--panel2); border-color: var(--line2) }
+  .task.active { background: var(--panel2); border-color: var(--line) }
   .t-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px }
   .t-title { font-size: 13.5px; font-weight: 500; line-height: 1.4; margin-bottom: 8px }
   .t-meta { font-size: 11px; color: var(--muted2); margin-bottom: 10px }
