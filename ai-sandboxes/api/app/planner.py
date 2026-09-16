@@ -50,7 +50,10 @@ class PlannerUnavailable(Exception):
 def _client(settings: Settings) -> AsyncOpenAI:
     if not settings.planner_configured:
         raise PlannerUnavailable("GEMINI_API_KEY not set")
-    return AsyncOpenAI(api_key=settings.gemini_api_key, base_url=_BASE_URL)
+    # Hard ceiling on a single LLM call; nginx allows 120s, we stop at 90
+    # so the user gets a graceful degradation message instead of a timeout.
+    return AsyncOpenAI(api_key=settings.gemini_api_key, base_url=_BASE_URL,
+                       timeout=90.0, max_retries=1)
 
 
 def _fallback(reply: str) -> dict:
