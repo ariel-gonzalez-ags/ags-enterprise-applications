@@ -55,8 +55,9 @@ check('app: brainstorm thread renders', app.includes('planner agent'));
 check('app: run inspector renders', app.includes('Target clouds') && app.includes('Idempotent result'));
 check('app: gate overlay present', app.includes('gate-overlay'));
 check('app: gate script calls /api/auth/me', app.includes('/api/auth/me'));
-check('app: gate has Google sign-in CTA', app.includes('href="/api/auth/login"') && app.includes('Sign in with Google'));
-check('app: provider glyphs inline', app.includes('aria-label="Azure"') && app.includes('aria-label="AWS"') && app.includes('aria-label="GCP"'));
+check('app: gate has Google sign-in CTA', /\/api\/auth\/login\?next=\/app/.test(app) && app.includes('Sign in with Google'));
+check('app: console nav renders (not marketing nav)', app.includes('Search tasks') && !app.includes('How it works'));
+check('app: provider logos wired', ['/assets/providers/aws.svg', '/assets/providers/azure.svg', '/assets/providers/gcp.svg'].every((p) => app.includes(p)));
 check('app: output formats offered', app.includes('Terraform') && app.includes('PowerShell') && app.includes('Ansible'));
 
 const authJs = read('js/auth.js');

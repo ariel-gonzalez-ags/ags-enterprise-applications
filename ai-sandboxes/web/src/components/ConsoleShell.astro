@@ -7,10 +7,10 @@ interface Props {
 }
 const { title = 'Agisphire — Console' } = Astro.props;
 import Base from '../layouts/Base.astro';
-import Nav from './Nav.astro';
+import ConsoleNav from './ConsoleNav.astro';
 ---
 <Base title={title} auth>
-  <Nav />
+  <ConsoleNav />
   <div class="console">
     <aside class="pane rail"><slot name="rail" /></aside>
     <main class="pane stage"><slot name="stage" /></main>
@@ -31,7 +31,7 @@ import Nav from './Nav.astro';
     display: grid;
     grid-template-columns: 300px 1fr 320px;
     height: 100vh;
-    padding-top: 80px; /* nav height */
+    padding-top: 56px; /* console nav height */
   }
   .pane { overflow-y: auto; min-height: 0 }
   .rail { border-right: 1px solid var(--line); background: var(--panel) }

@@ -1,8 +1,7 @@
 ---
-// Left rail: task library. Each card shows state pill, provider glyph,
+// Left rail: task library. Each card shows state pill, provider logo,
 // formats, and check progress. "New task" starts a brainstorm.
 import Icon from './Icon.astro';
-import ProviderIcon from './ProviderIcon.astro';
 import { tasks, taskStates } from '../content/console.js';
 
 const stateMeta = Object.fromEntries(taskStates.map((s) => [s.id, s]));
@@ -18,7 +17,7 @@ const stateMeta = Object.fromEntries(taskStates.map((s) => [s.id, s]));
       <a href={`/app/tasks/${t.id}`} class={`task ${t.state === 'running' ? 'active' : ''}`}>
         <div class="t-top">
           <span class={`state s-${t.state}`}>{stateMeta[t.state].label}</span>
-          <ProviderIcon id={t.provider} size={15} />
+          <img src={`/assets/providers/${t.provider}.svg`} alt={t.provider} class="t-prov" />
         </div>
         <div class="t-title">{t.title}</div>
         <div class="t-meta mono">
@@ -52,6 +51,7 @@ const stateMeta = Object.fromEntries(taskStates.map((s) => [s.id, s]));
   .task:hover { background: var(--panel2) }
   .task.active { background: var(--panel2); border-color: var(--line) }
   .t-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px }
+  .t-prov { height: 13px; width: auto; max-width: 22px; border-radius: 3px; display: block; opacity: .9 }
   .t-title { font-size: 13.5px; font-weight: 500; line-height: 1.4; margin-bottom: 8px }
   .t-meta { font-size: 11px; color: var(--muted2); margin-bottom: 10px }
   .t-checks { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted) }
