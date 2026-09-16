@@ -98,7 +98,7 @@
       return '<button class="task' + (t.id === selectedId ? ' active' : '') + '" data-task-id="' + esc(t.id) + '">' +
         '<div class="t-top"><span class="state s-' + esc(t.state) + '">' + esc(t.state) + '</span>' +
         '<span class="t-right">' +
-        (deletable ? '<span class="t-del" data-del="' + esc(t.id) + '" title="Delete task">' + TRASH_SVG + '</span>' : '') +
+        (deletable ? '<span class="t-del" data-del="' + esc(t.id) + '" data-state="' + esc(t.state) + '" title="Delete task">' + TRASH_SVG + '</span>' : '') +
         provImg(t.provider, 't-prov') + '</span></div>' +
         '<div class="t-title">' + esc(t.title) + '</div>' +
         '<div class="t-meta mono"><span>' + esc(t.id.slice(0, 8)) + '</span> · <span>' + meta + '</span></div>' +
@@ -113,6 +113,12 @@
     if (del) {
       e.stopPropagation();
       var id = del.getAttribute('data-del');
+      // Verified runs delivered artifacts: confirm before wiping the record.
+      // Drafts/planned (incl. untouched "Untitled task") delete immediately.
+      if (del.getAttribute('data-state') === 'verified' &&
+          !window.confirm('Delete this verified task? Its artifacts and evidence will be permanently removed.')) {
+        return;
+      }
       api('/api/tasks/' + encodeURIComponent(id), { method: 'DELETE' }).then(function () {
         if (selectedId === id) { selected = null; selectedId = null; renderAll(); }
         refreshList();
