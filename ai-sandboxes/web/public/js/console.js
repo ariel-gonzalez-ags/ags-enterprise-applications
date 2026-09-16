@@ -94,11 +94,11 @@
     list.innerHTML = tasks.map(function (t) {
       var pct = t.checks.total ? Math.round((t.checks.passed / t.checks.total) * 100) : 0;
       var meta = t.state === 'running' ? 'running · ' + t.checks.passed + '/' + t.checks.total : ago(t.updated);
-      var deletable = t.state === 'drafting' || t.state === 'planned';
+      var deletable = t.state !== 'running';
       return '<button class="task' + (t.id === selectedId ? ' active' : '') + '" data-task-id="' + esc(t.id) + '">' +
         '<div class="t-top"><span class="state s-' + esc(t.state) + '">' + esc(t.state) + '</span>' +
         '<span class="t-right">' +
-        (deletable ? '<span class="t-del" data-del="' + esc(t.id) + '" title="Delete draft">' + TRASH_SVG + '</span>' : '') +
+        (deletable ? '<span class="t-del" data-del="' + esc(t.id) + '" title="Delete task">' + TRASH_SVG + '</span>' : '') +
         provImg(t.provider, 't-prov') + '</span></div>' +
         '<div class="t-title">' + esc(t.title) + '</div>' +
         '<div class="t-meta mono"><span>' + esc(t.id.slice(0, 8)) + '</span> · <span>' + meta + '</span></div>' +
@@ -243,14 +243,37 @@
     });
   }
 
+  /* ---------- target-cloud picker (rail) ---------- */
+
+  // Reflect the selected task's provider; clicking while the task is
+  // shapeable PATCHes it. The picker also sets the provider for New task.
+  function renderProviders() {
+    var provs = provGrid.querySelectorAll('.prov');
+    var current = selected ? selected.provider : (localStorage.getItem('ags-provider') || 'azure');
+    for (var i = 0; i < provs.length; i++) {
+      provs[i].classList.toggle('on', provs[i].getAttribute('data-prov') === current);
+    }
+  }
+
+  provGrid.addEventListener('click', function (e) {
+    var btn = e.target.closest('.prov');
+    if (!btn) return;
+    var prov = btn.getAttribute('data-prov');
+    localStorage.setItem('ags-provider', prov);
+    if (selected && (selected.state === 'drafting' || selected.state === 'planned')) {
+      api('/api/tasks/' + encodeURIComponent(selectedId), {
+        method: 'PATCH', body: JSON.stringify({ provider: prov }),
+      }).then(function (t) { selected = t; renderAll(); refreshList(); })
+        .catch(function () { select(selectedId); });
+    } else {
+      renderProviders();
+    }
+  });
+
   /* ---------- inspector ---------- */
 
   function renderInspector() {
-    var provs = provGrid.querySelectorAll('.prov');
-    for (var i = 0; i < provs.length; i++) {
-      var on = !!selected && provs[i].getAttribute('data-prov') === selected.provider;
-      provs[i].classList.toggle('on', on);
-    }
+    renderProviders();
     tglIdem.classList.toggle('on', !!(selected && selected.idempotent));
     tglDestroy.classList.toggle('on', !!(selected && selected.config && selected.config.destroyAfter));
     budget.textContent = selected && selected.config ? selected.config.maxHours + 'h' : '—';
@@ -350,7 +373,8 @@
   newBtn.addEventListener('click', function () {
     if (busy) return;
     busy = true;
-    api('/api/tasks', { method: 'POST', body: JSON.stringify({ title: '' }) })
+    var prov = localStorage.getItem('ags-provider') || 'azure';
+    api('/api/tasks', { method: 'POST', body: JSON.stringify({ title: '', provider: prov }) })
       .then(function (t) { return refreshList().then(function () { return select(t.id); }); })
       .catch(function () { /* surfaced by gate if auth broke */ })
       .then(function () { busy = false; input.focus(); });

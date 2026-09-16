@@ -175,14 +175,36 @@ async def main():
         assert "runbook.md" in ids and "verify.sh" in ids
         print("ok    custom format slugged (json-policy-format) -> .json artifact")
 
-        # 6d. delete: drafts go, verified stays
+        # 6d. delete: drafts and verified go; only a running task is refused
         r = await c.delete(f"/api/tasks/{tid2}")
         assert r.status_code == 204, r.status_code
         r = await c.get(f"/api/tasks/{tid2}")
         assert r.status_code == 404
-        r = await c.delete(f"/api/tasks/{tid}")
+        # tid3 is verified (from 6c): deletable now. (tid stays: used below.)
+        r = await c.delete(f"/api/tasks/{tid3}")
+        assert r.status_code == 204, r.status_code
+        # a running task refuses
+        r = await c.post("/api/tasks", json={"title": "runner"})
+        tidr = r.json()["id"]
+        import app.db as _db2
+        from app.models import Task as _Task2
+        async with _db2.session() as s:
+            tr = await s.get(_Task2, tidr); tr.state = "running"; await s.commit()
+        r = await c.delete(f"/api/tasks/{tidr}")
         assert r.status_code == 409, r.status_code
-        print("ok    delete: draft removed (204), verified task refused (409)")
+        print("ok    delete: draft+verified removed (204), running refused (409)")
+
+        # 6e. provider: set at create, patchable while shapeable, validated
+        r = await c.post("/api/tasks", json={"title": "pv", "provider": "gcp"})
+        assert r.json()["provider"] == "gcp", r.json()
+        tidp = r.json()["id"]
+        r = await c.patch(f"/api/tasks/{tidp}", json={"provider": "aws"})
+        assert r.json()["provider"] == "aws"
+        r = await c.patch(f"/api/tasks/{tidp}", json={"provider": "oracle"})
+        assert r.status_code == 422, r.status_code
+        r = await c.post("/api/tasks", json={"title": "bad", "provider": "oracle"})
+        assert r.status_code == 422
+        print("ok    provider: set at create, patched, invalid rejected (422)")
 
         # 6b. run narrated progress into the thread
         r = await c.get(f"/api/tasks/{tid}")

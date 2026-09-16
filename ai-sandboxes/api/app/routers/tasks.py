@@ -76,14 +76,22 @@ async def list_tasks(user: dict = Depends(_user)):
         return {"tasks": [_task_json(t) for t in result.scalars()]}
 
 
+_PROVIDERS = {"azure", "aws", "gcp"}
+
+
 class CreateTask(BaseModel):
     title: str = Field(default="Untitled task", max_length=200)
+    provider: str = Field(default="azure", max_length=16)
 
 
 @router.post("/tasks", status_code=201)
 async def create_task(body: CreateTask, user: dict = Depends(_user)):
+    provider = body.provider.strip().lower()
+    if provider not in _PROVIDERS:
+        raise HTTPException(422, f"provider must be one of {sorted(_PROVIDERS)}")
     async with db.session() as s:
-        t = Task(owner_sub=user["sub"], title=body.title.strip() or "Untitled task")
+        t = Task(owner_sub=user["sub"], title=body.title.strip() or "Untitled task",
+                 provider=provider)
         s.add(t)
         await s.commit()
         return _task_json(t)
@@ -121,20 +129,22 @@ async def download_artifact(task_id: str, filename: str, user: dict = Depends(_u
 
 @router.delete("/tasks/{task_id}", status_code=204)
 async def delete_task(task_id: str, user: dict = Depends(_user)):
-    """Drafting/planned tasks are disposable; running/verified/delivered ones
-    are a record and can't be removed."""
+    """Any non-running task can be deleted; its messages and artifacts go with
+    it (cascade). A running task has a live sandbox and must not vanish
+    mid-flight: 409 until it finishes."""
     async with db.session() as s:
         t = await s.get(Task, task_id)
         if t is None or t.owner_sub != user["sub"]:
             raise HTTPException(404, "task not found")
-        if t.state not in ("drafting", "planned"):
-            raise HTTPException(409, f"task is {t.state}; only drafts can be deleted")
+        if t.state == "running":
+            raise HTTPException(409, "task is running; wait for it to finish before deleting")
         await s.delete(t)
         await s.commit()
 
 
 class PatchTask(BaseModel):
-    formats: list[str] = Field(min_length=1, max_length=12)
+    formats: list[str] | None = Field(default=None)
+    provider: str | None = Field(default=None, max_length=16)
 
 
 def _slug(raw: str) -> str:
@@ -147,22 +157,28 @@ def _slug(raw: str) -> str:
 
 @router.patch("/tasks/{task_id}")
 async def patch_task(task_id: str, body: PatchTask, user: dict = Depends(_user)):
-    """User edits the accepted deliverable set (toggling plan-card options or
-    adding a custom one). Only while the task is still shapeable."""
-    clean: list[str] = []
-    for f in body.formats:
-        slug = _slug(f)
-        if slug and slug not in clean:
-            clean.append(slug)
-    if not clean:
-        raise HTTPException(422, "at least one deliverable is required")
+    """User edits the deliverable set and/or target cloud (toggling plan-card
+    options, adding a custom one, picking a provider). Only while shapeable."""
     async with db.session() as s:
         t = await s.get(Task, task_id)
         if t is None or t.owner_sub != user["sub"]:
             raise HTTPException(404, "task not found")
         if t.state not in ("drafting", "planned"):
             raise HTTPException(409, f"task is {t.state}; deliverables are locked")
-        t.formats = clean
+        if body.formats is not None:
+            clean: list[str] = []
+            for f in body.formats:
+                slug = _slug(f)
+                if slug and slug not in clean:
+                    clean.append(slug)
+            if not clean:
+                raise HTTPException(422, "at least one deliverable is required")
+            t.formats = clean
+        if body.provider is not None:
+            provider = body.provider.strip().lower()
+            if provider not in _PROVIDERS:
+                raise HTTPException(422, f"provider must be one of {sorted(_PROVIDERS)}")
+            t.provider = provider
         await s.commit()
         return _task_json(t, detail=True)
 

@@ -1,12 +1,32 @@
 ---
-// Left rail: task library. Shell only: console.js renders cards from
-// GET /api/tasks. "New task" starts a brainstorm.
+// Left rail: task library + target-cloud picker. Shell only: console.js
+// renders cards from GET /api/tasks and wires the picker to the selected
+// task's provider. "New task" starts a brainstorm on the picked cloud.
 import Icon from './Icon.astro';
+import { providers } from '../content/console.js';
 ---
 <div class="rail-in">
   <div class="rail-head">
     <span class="rail-title"><Icon name="library" size={15} /> Tasks</span>
     <button class="new-btn" data-console="new-task"><Icon name="plus" size={14} /> New task</button>
+  </div>
+
+  <div class="prov-block">
+    <span class="prov-label">Target cloud</span>
+    <div class="prov-grid" data-console="providers">
+      {providers.map((p) => (
+        <button class="prov" data-prov={p.id} type="button" title={p.name}>
+          {p.id === 'aws' ? (
+            <picture>
+              <source srcset="/assets/providers/aws-light.svg" media="(prefers-color-scheme: light)" />
+              <img src="/assets/providers/aws.svg" alt="AWS" class="prov-icon" />
+            </picture>
+          ) : (
+            <img src={`/assets/providers/${p.id}.svg`} alt={p.name} class="prov-icon" />
+          )}
+        </button>
+      ))}
+    </div>
   </div>
 
   <div class="task-list" data-console="task-list">
@@ -24,6 +44,18 @@ import Icon from './Icon.astro';
     border: 1px solid var(--line2); transition: .2s; cursor: pointer;
   }
   .new-btn:hover { color: var(--text); border-color: #57301A }
+
+  .prov-block { display: flex; flex-direction: column; gap: 8px }
+  .prov-label { font-size: 10px; font-weight: 600; color: var(--muted2); text-transform: uppercase; letter-spacing: .08em; font-family: 'JetBrains Mono', monospace }
+  .prov-grid { display: flex; gap: 6px }
+  .prov-icon { border-radius: 3px; display: block; height: 14px; width: auto; max-width: 22px; object-fit: contain }
+  .prov {
+    flex: 1; display: inline-flex; align-items: center; justify-content: center;
+    padding: 8px 6px; border-radius: 9px; background: var(--panel2);
+    border: 1px solid var(--line2); cursor: pointer; transition: .15s; opacity: .55;
+  }
+  .prov:hover { opacity: .85; background: var(--raised) }
+  .prov.on { opacity: 1; border-color: var(--accent); background: var(--raised) }
 
   .task-list { display: flex; flex-direction: column; gap: 4px }
   /* Task cards render at runtime via console.js: Astro scoping doesn't

@@ -1,30 +1,10 @@
 ---
-// Right inspector: run configuration (providers, guarantees) and artifacts.
-// Shell only: console.js reflects the selected task's config + artifacts.
+// Right inspector: run guarantees and artifacts. Shell only: console.js
+// reflects the selected task's config + artifacts. The target-cloud picker
+// lives in the left rail (TaskRail) next to New task.
 import Icon from './Icon.astro';
-import { providers } from '../content/console.js';
 ---
 <div class="insp">
-  <section>
-    <h3><Icon name="network" size={14} /> Target clouds</h3>
-    <p class="hint">Where the sandbox provisions. Pick one, or compare across providers with proof.</p>
-    <div class="prov-grid" data-console="providers">
-      {providers.map((p) => (
-        <button class="prov" data-prov={p.id} disabled>
-          {p.id === 'aws' ? (
-            <picture>
-              <source srcset="/assets/providers/aws-light.svg" media="(prefers-color-scheme: light)" />
-              <img src="/assets/providers/aws.svg" alt="AWS" class="prov-icon" />
-            </picture>
-          ) : (
-            <img src={`/assets/providers/${p.id}.svg`} alt={p.name} class="prov-icon" />
-          )}
-          {p.name}
-        </button>
-      ))}
-    </div>
-  </section>
-
   <section>
     <h3><Icon name="sliders" size={14} /> Guarantees</h3>
     <div class="guarantee">
@@ -85,20 +65,6 @@ import { providers } from '../content/console.js';
   }
   .hint { font-size: 12px; color: var(--muted2); line-height: 1.5; margin-bottom: 12px }
   .hint.foot { margin: 12px 0 0 }
-
-  .prov-grid { display: flex; gap: 8px }
-  .prov-icon { border-radius: 3px; display: block; height: 13px; width: auto; max-width: 22px; object-fit: contain }
-  .prov {
-    flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-    padding: 9px 6px; font-size: 12.5px; font-weight: 500; border-radius: 10px;
-    background: var(--panel2); border: 1px solid var(--line2); color: var(--muted); cursor: pointer;
-    transition: .15s;
-  }
-  .prov:hover { color: var(--text); background: var(--raised) }
-  .prov.on { background: var(--raised); border-color: var(--line2); color: var(--text) }
-  .prov:disabled { cursor: default; opacity: .85 }
-  .prov:disabled:hover { color: var(--muted); background: var(--panel2) }
-  .prov.on:disabled:hover { color: var(--text); background: var(--raised) }
 
   .fmt-kind { font-size: 9.5px; color: var(--muted2); text-transform: uppercase; letter-spacing: .05em }
 
