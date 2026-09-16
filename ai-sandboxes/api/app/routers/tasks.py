@@ -3,12 +3,13 @@ gated by the signed session cookie and scoped to the owning user."""
 import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from .. import db, planner, runner
 from ..config import Settings
-from ..models import Message, Task
+from ..models import Artifact, Message, Task
 from ..session import get_session
 
 router = APIRouter()
@@ -47,7 +48,8 @@ def _task_json(t: Task, detail: bool = False) -> dict:
             for m in t.messages
         ]
         out["artifacts"] = [
-            {"id": a.filename, "kind": a.kind, "size": a.size, "note": a.note}
+            {"id": a.filename, "kind": a.kind, "size": a.size, "note": a.note,
+             "url": f"/api/tasks/{t.id}/artifacts/{a.filename}"}
             for a in t.artifacts
         ]
     return out
@@ -74,14 +76,22 @@ async def list_tasks(user: dict = Depends(_user)):
         return {"tasks": [_task_json(t) for t in result.scalars()]}
 
 
+_PROVIDERS = {"azure", "aws", "gcp"}
+
+
 class CreateTask(BaseModel):
     title: str = Field(default="Untitled task", max_length=200)
+    provider: str = Field(default="azure", max_length=16)
 
 
 @router.post("/tasks", status_code=201)
 async def create_task(body: CreateTask, user: dict = Depends(_user)):
+    provider = body.provider.strip().lower()
+    if provider not in _PROVIDERS:
+        raise HTTPException(422, f"provider must be one of {sorted(_PROVIDERS)}")
     async with db.session() as s:
-        t = Task(owner_sub=user["sub"], title=body.title.strip() or "Untitled task")
+        t = Task(owner_sub=user["sub"], title=body.title.strip() or "Untitled task",
+                 provider=provider)
         s.add(t)
         await s.commit()
         return _task_json(t)
@@ -96,47 +106,79 @@ async def get_task(task_id: str, user: dict = Depends(_user)):
         return _task_json(t, detail=True)
 
 
-@router.delete("/tasks/{task_id}", status_code=204)
-async def delete_task(task_id: str, user: dict = Depends(_user)):
-    """Drafting/planned tasks are disposable; running/verified/delivered ones
-    are a record and can't be removed."""
+@router.get("/tasks/{task_id}/artifacts/{filename}")
+async def download_artifact(task_id: str, filename: str, user: dict = Depends(_user)):
+    """Artifact contents, owner-scoped. `download=1` forces a file download;
+    plain GET returns text the in-app viewer renders."""
     async with db.session() as s:
         t = await s.get(Task, task_id)
         if t is None or t.owner_sub != user["sub"]:
             raise HTTPException(404, "task not found")
-        if t.state not in ("drafting", "planned"):
-            raise HTTPException(409, f"task is {t.state}; only drafts can be deleted")
+        result = await s.execute(
+            select(Artifact).where(Artifact.task_id == task_id,
+                                   Artifact.filename == filename))
+        a = result.scalar_one_or_none()
+        if a is None:
+            raise HTTPException(404, "artifact not found")
+        headers = {
+            "Content-Disposition": f'attachment; filename="{a.filename}"',
+            "Cache-Control": "private, no-store",
+        }
+        return PlainTextResponse(a.content, headers=headers)
+
+
+@router.delete("/tasks/{task_id}", status_code=204)
+async def delete_task(task_id: str, user: dict = Depends(_user)):
+    """Any non-running task can be deleted; its messages and artifacts go with
+    it (cascade). A running task has a live sandbox and must not vanish
+    mid-flight: 409 until it finishes."""
+    async with db.session() as s:
+        t = await s.get(Task, task_id)
+        if t is None or t.owner_sub != user["sub"]:
+            raise HTTPException(404, "task not found")
+        if t.state == "running":
+            raise HTTPException(409, "task is running; wait for it to finish before deleting")
         await s.delete(t)
         await s.commit()
 
 
 class PatchTask(BaseModel):
-    formats: list[str] = Field(min_length=1, max_length=12)
+    formats: list[str] | None = Field(default=None)
+    provider: str | None = Field(default=None, max_length=16)
 
 
 def _slug(raw: str) -> str:
-    """Lowercase, spaces to dashes, keep [a-z0-9-_]; matches the client."""
+    """Lowercase, whitespace runs to dashes, strip the rest; matches the client.
+    "JSON policy format" -> "json-policy-format"."""
     import re
-    return re.sub(r"[^a-z0-9-_]", "", raw.strip().lower().replace(" ", "-"))[:32]
+    s = re.sub(r"\s+", "-", raw.strip().lower())
+    s = re.sub(r"[^a-z0-9-_]", "", s)
+    return re.sub(r"-{2,}", "-", s).strip("-")[:32]
 
 @router.patch("/tasks/{task_id}")
 async def patch_task(task_id: str, body: PatchTask, user: dict = Depends(_user)):
-    """User edits the accepted deliverable set (toggling plan-card options or
-    adding a custom one). Only while the task is still shapeable."""
-    clean: list[str] = []
-    for f in body.formats:
-        slug = _slug(f)
-        if slug and slug not in clean:
-            clean.append(slug)
-    if not clean:
-        raise HTTPException(422, "at least one deliverable is required")
+    """User edits the deliverable set and/or target cloud (toggling plan-card
+    options, adding a custom one, picking a provider). Only while shapeable."""
     async with db.session() as s:
         t = await s.get(Task, task_id)
         if t is None or t.owner_sub != user["sub"]:
             raise HTTPException(404, "task not found")
         if t.state not in ("drafting", "planned"):
             raise HTTPException(409, f"task is {t.state}; deliverables are locked")
-        t.formats = clean
+        if body.formats is not None:
+            clean: list[str] = []
+            for f in body.formats:
+                slug = _slug(f)
+                if slug and slug not in clean:
+                    clean.append(slug)
+            if not clean:
+                raise HTTPException(422, "at least one deliverable is required")
+            t.formats = clean
+        if body.provider is not None:
+            provider = body.provider.strip().lower()
+            if provider not in _PROVIDERS:
+                raise HTTPException(422, f"provider must be one of {sorted(_PROVIDERS)}")
+            t.provider = provider
         await s.commit()
         return _task_json(t, detail=True)
 
@@ -209,7 +251,7 @@ async def chat(task_id: str, body: ChatIn, request: Request, user: dict = Depend
 
 
 @router.post("/tasks/{task_id}/approve")
-async def approve(task_id: str, user: dict = Depends(_user)):
+async def approve(task_id: str, request: Request, user: dict = Depends(_user)):
     async with db.session() as s:
         t = await s.get(Task, task_id)
         if t is None or t.owner_sub != user["sub"]:
@@ -219,5 +261,5 @@ async def approve(task_id: str, user: dict = Depends(_user)):
         t.state = "running"
         t.checks_passed = 0
         await s.commit()
-    runner.spawn(task_id)
+    runner.spawn(task_id, _settings(request))
     return {"id": task_id, "state": "running"}

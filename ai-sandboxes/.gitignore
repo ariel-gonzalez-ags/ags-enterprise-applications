@@ -7,3 +7,4 @@ web/dist/
 __pycache__/
 secrets/
 web/.astro/
+TODO.local.md

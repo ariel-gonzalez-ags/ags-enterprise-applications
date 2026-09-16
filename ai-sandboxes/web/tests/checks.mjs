@@ -52,7 +52,8 @@ check('home: hidden console link for signed-in users', home.includes('data-auth=
 const app = read('app/index.html');
 check('app: console three-pane shell', app.includes('data-console="task-list"') && app.includes('data-console="thread"'));
 check('app: console data hooks present', app.includes('data-console="send"') && app.includes('data-console="approve"') && app.includes('data-console="artifacts"'));
-check('app: run inspector renders', app.includes('Target clouds') && app.includes('Idempotent result'));
+check('app: run inspector renders', app.includes('Guarantees') && app.includes('Idempotent result'));
+check('app: target-cloud picker in rail', app.includes('data-console="providers"') && app.includes('Target cloud'));
 check('app: no mock data shipped', !app.includes('ags_b3f58c') && !app.includes('OOMKill'));
 check('app: gate overlay present', app.includes('gate-overlay'));
 check('app: gate script calls /api/auth/me', app.includes('/api/auth/me'));

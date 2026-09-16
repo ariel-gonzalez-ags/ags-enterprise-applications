@@ -1,7 +1,9 @@
 ---
-// Left rail: task library. Shell only: console.js renders cards from
-// GET /api/tasks. "New task" starts a brainstorm.
+// Left rail: task library + target-cloud picker. Shell only: console.js
+// renders cards from GET /api/tasks and wires the picker to the selected
+// task's provider. "New task" starts a brainstorm on the picked cloud.
 import Icon from './Icon.astro';
+import { providers } from '../content/console.js';
 ---
 <div class="rail-in">
   <div class="rail-head">
@@ -9,8 +11,37 @@ import Icon from './Icon.astro';
     <button class="new-btn" data-console="new-task"><Icon name="plus" size={14} /> New task</button>
   </div>
 
+  <div class="prov-block">
+    <span class="prov-label">Target cloud</span>
+    <div class="prov-grid" data-console="providers">
+      {providers.map((p) => (
+        <button class="prov" data-prov={p.id} type="button" title={p.name}>
+          {p.id === 'aws' ? (
+            <picture>
+              <source srcset="/assets/providers/aws-light.svg" media="(prefers-color-scheme: light)" />
+              <img src="/assets/providers/aws.svg" alt="AWS" class="prov-icon prov-icon-aws" />
+            </picture>
+          ) : (
+            <img src={`/assets/providers/${p.id}.svg`} alt={p.name} class={`prov-icon${p.id === 'aws' ? ' prov-icon-aws' : ''}`} />
+          )}
+        </button>
+      ))}
+    </div>
+  </div>
+
   <div class="task-list" data-console="task-list">
     <p class="empty mono">loading…</p>
+  </div>
+</div>
+
+<div class="confirm" data-console="confirm" hidden>
+  <div class="confirm-box">
+    <p class="confirm-title" data-console="confirm-title">Delete task?</p>
+    <p class="confirm-body" data-console="confirm-body"></p>
+    <div class="confirm-actions">
+      <button class="confirm-cancel" data-console="confirm-cancel" type="button">Cancel</button>
+      <button class="confirm-go" data-console="confirm-go" type="button">Delete</button>
+    </div>
   </div>
 </div>
 
@@ -24,6 +55,19 @@ import Icon from './Icon.astro';
     border: 1px solid var(--line2); transition: .2s; cursor: pointer;
   }
   .new-btn:hover { color: var(--text); border-color: #57301A }
+
+  .prov-block { display: flex; flex-direction: column; gap: 8px }
+  .prov-label { font-size: 10px; font-weight: 600; color: var(--muted2); text-transform: uppercase; letter-spacing: .08em; font-family: 'JetBrains Mono', monospace }
+  .prov-grid { display: flex; gap: 6px }
+  .prov-icon { border-radius: 3px; display: block; height: 14px; width: auto; max-width: 22px; object-fit: contain }
+  .prov-icon-aws { height: 10px }
+  .prov {
+    flex: 1; display: inline-flex; align-items: center; justify-content: center;
+    padding: 8px 6px; border-radius: 9px; background: var(--panel2);
+    border: 1px solid var(--line2); cursor: pointer; transition: .15s; opacity: .55;
+  }
+  .prov:hover { opacity: .85; background: var(--raised) }
+  .prov.on { opacity: 1; border-color: var(--accent); background: var(--raised) }
 
   .task-list { display: flex; flex-direction: column; gap: 4px }
   /* Task cards render at runtime via console.js: Astro scoping doesn't
@@ -45,6 +89,9 @@ import Icon from './Icon.astro';
   .task-list :global(.task:hover .t-del) { opacity: 1 }
   .task-list :global(.t-del:hover) { color: var(--red, #E5484D); background: var(--raised) }
   .task-list :global(.t-prov) { height: 13px; width: auto; max-width: 22px; border-radius: 3px; display: block; opacity: .9 }
+  /* AWS is a wide wordmark (304x182), not a square glyph like Azure/GCP;
+     shrink it so its visual mass lines up with the others. */
+  .task-list :global(.t-prov-aws) { height: 9px }
   .task-list :global(.t-title) { font-size: 13.5px; font-weight: 500; line-height: 1.4; margin-bottom: 8px }
   .task-list :global(.t-meta) { font-size: 11px; color: var(--muted2); margin-bottom: 10px }
   .task-list :global(.t-checks) { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted) }
@@ -57,4 +104,24 @@ import Icon from './Icon.astro';
   .task-list :global(.s-running) { color: var(--accent); border-color: rgba(240, 86, 35, .35) }
   .task-list :global(.s-verified) { color: var(--muted) }
   .task-list :global(.s-delivered) { color: var(--muted2) }
+
+  .confirm { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 70; display: grid; place-items: center; padding: 24px }
+  .confirm[hidden] { display: none }
+  .confirm-box {
+    background: var(--panel); border: 1px solid var(--line2); border-radius: 14px;
+    width: min(400px, 100%); padding: 22px;
+  }
+  .confirm-title { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 8px }
+  .confirm-body { font-size: 13px; color: var(--muted); line-height: 1.55; margin-bottom: 20px }
+  .confirm-actions { display: flex; justify-content: flex-end; gap: 10px }
+  .confirm-cancel {
+    font-size: 13px; font-weight: 500; padding: 8px 16px; border-radius: 9px;
+    background: transparent; border: 1px solid var(--line2); color: var(--muted); cursor: pointer; transition: .15s;
+  }
+  .confirm-cancel:hover { color: var(--text); background: var(--raised) }
+  .confirm-go {
+    font-size: 13px; font-weight: 600; padding: 8px 16px; border-radius: 9px;
+    background: var(--accent); border: none; color: var(--on-accent); cursor: pointer; transition: .15s;
+  }
+  .confirm-go:hover { filter: brightness(1.1) }
 </style>

@@ -75,14 +75,33 @@
   }
 
   function provImg(id, cls) {
+    var c = cls + (id === 'aws' ? ' ' + cls + '-aws' : '');
     if (id === 'aws') {
       return '<picture><source srcset="/assets/providers/aws-light.svg" media="(prefers-color-scheme: light)">' +
-        '<img src="/assets/providers/aws.svg" alt="AWS" class="' + cls + '"></picture>';
+        '<img src="/assets/providers/aws.svg" alt="AWS" class="' + c + '"></picture>';
     }
-    return '<img src="/assets/providers/' + esc(id) + '.svg" alt="' + esc(id) + '" class="' + cls + '">';
+    return '<img src="/assets/providers/' + esc(id) + '.svg" alt="' + esc(id) + '" class="' + c + '">';
   }
 
   var TRASH_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
+
+  /* ---------- confirm modal (design-system, not window.confirm) ---------- */
+
+  var confirmEl = document.querySelector('[data-console="confirm"]');
+  var confirmBody = document.querySelector('[data-console="confirm-body"]');
+  var confirmGo = document.querySelector('[data-console="confirm-go"]');
+  var confirmCancel = document.querySelector('[data-console="confirm-cancel"]');
+  var confirmCb = null;
+
+  function askConfirm(body, onYes) {
+    confirmBody.textContent = body;
+    confirmCb = onYes;
+    confirmEl.hidden = false;
+  }
+  function closeConfirm() { confirmEl.hidden = true; confirmCb = null; }
+  confirmGo.addEventListener('click', function () { var cb = confirmCb; closeConfirm(); if (cb) cb(); });
+  confirmCancel.addEventListener('click', closeConfirm);
+  confirmEl.addEventListener('click', function (e) { if (e.target === confirmEl) closeConfirm(); });
 
   /* ---------- rail ---------- */
 
@@ -94,11 +113,11 @@
     list.innerHTML = tasks.map(function (t) {
       var pct = t.checks.total ? Math.round((t.checks.passed / t.checks.total) * 100) : 0;
       var meta = t.state === 'running' ? 'running · ' + t.checks.passed + '/' + t.checks.total : ago(t.updated);
-      var deletable = t.state === 'drafting' || t.state === 'planned';
+      var deletable = t.state !== 'running';
       return '<button class="task' + (t.id === selectedId ? ' active' : '') + '" data-task-id="' + esc(t.id) + '">' +
         '<div class="t-top"><span class="state s-' + esc(t.state) + '">' + esc(t.state) + '</span>' +
         '<span class="t-right">' +
-        (deletable ? '<span class="t-del" data-del="' + esc(t.id) + '" title="Delete draft">' + TRASH_SVG + '</span>' : '') +
+        (deletable ? '<span class="t-del" data-del="' + esc(t.id) + '" data-state="' + esc(t.state) + '" title="Delete task">' + TRASH_SVG + '</span>' : '') +
         provImg(t.provider, 't-prov') + '</span></div>' +
         '<div class="t-title">' + esc(t.title) + '</div>' +
         '<div class="t-meta mono"><span>' + esc(t.id.slice(0, 8)) + '</span> · <span>' + meta + '</span></div>' +
@@ -113,10 +132,19 @@
     if (del) {
       e.stopPropagation();
       var id = del.getAttribute('data-del');
-      api('/api/tasks/' + encodeURIComponent(id), { method: 'DELETE' }).then(function () {
-        if (selectedId === id) { selected = null; selectedId = null; renderAll(); }
-        refreshList();
-      }).catch(function () { refreshList(); });
+      var doDelete = function () {
+        api('/api/tasks/' + encodeURIComponent(id), { method: 'DELETE' }).then(function () {
+          if (selectedId === id) { selected = null; selectedId = null; renderAll(); }
+          refreshList();
+        }).catch(function () { refreshList(); });
+      };
+      // Verified runs delivered artifacts: confirm first. Drafts/planned
+      // (incl. untouched "Untitled task") delete immediately.
+      if (del.getAttribute('data-state') === 'verified') {
+        askConfirm('This verified task and its artifacts and evidence will be permanently removed.', doDelete);
+      } else {
+        doDelete();
+      }
       return;
     }
     var card = e.target.closest('[data-task-id]');
@@ -135,7 +163,7 @@
   }
 
   function planCard(plan, editable) {
-    var accepted = selected ? selected.formats : (plan.deliverables || []).map(function (d) { return d.id; });
+    var accepted = selected.formats;  // planCard is only called with a selected task
     var opts = (plan.deliverables || []).map(function (d) {
       return optRow(d.id, d.why, accepted.indexOf(d.id) !== -1, editable);
     }).join('');
@@ -202,7 +230,6 @@
   thread.addEventListener('click', function (e) {
     var opt = e.target.closest('.choice-card.editable .opt[data-format]');
     if (!opt || opt.tagName !== 'BUTTON') return;
-    var id = opt.getAttribute('data-format');
     var on = opt.classList.toggle('on');
     opt.querySelector('.opt-check').innerHTML = on ? CHECK_SVG : '';
     var formats = [];
@@ -222,7 +249,8 @@
     if (!form) return;
     e.preventDefault();
     var inputEl = form.querySelector('input');
-    var val = inputEl.value.trim().toLowerCase().replace(/[^a-z0-9-_]/g, '');
+    // slug: lowercase, whitespace runs to dashes, strip the rest ("JSON policy format" -> "json-policy-format")
+    var val = inputEl.value.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-_]/g, '').replace(/-{2,}/g, '-').replace(/^-|-$/g, '');
     if (!val) return;
     var formats = selected.formats.slice();
     if (formats.indexOf(val) === -1) formats.push(val);
@@ -242,14 +270,37 @@
     });
   }
 
+  /* ---------- target-cloud picker (rail) ---------- */
+
+  // Reflect the selected task's provider; clicking while the task is
+  // shapeable PATCHes it. The picker also sets the provider for New task.
+  function renderProviders() {
+    var provs = provGrid.querySelectorAll('.prov');
+    var current = selected ? selected.provider : (localStorage.getItem('ags-provider') || 'azure');
+    for (var i = 0; i < provs.length; i++) {
+      provs[i].classList.toggle('on', provs[i].getAttribute('data-prov') === current);
+    }
+  }
+
+  provGrid.addEventListener('click', function (e) {
+    var btn = e.target.closest('.prov');
+    if (!btn) return;
+    var prov = btn.getAttribute('data-prov');
+    localStorage.setItem('ags-provider', prov);
+    if (selected && (selected.state === 'drafting' || selected.state === 'planned')) {
+      api('/api/tasks/' + encodeURIComponent(selectedId), {
+        method: 'PATCH', body: JSON.stringify({ provider: prov }),
+      }).then(function (t) { selected = t; renderAll(); refreshList(); })
+        .catch(function () { select(selectedId); });
+    } else {
+      renderProviders();
+    }
+  });
+
   /* ---------- inspector ---------- */
 
   function renderInspector() {
-    var provs = provGrid.querySelectorAll('.prov');
-    for (var i = 0; i < provs.length; i++) {
-      var on = !!selected && provs[i].getAttribute('data-prov') === selected.provider;
-      provs[i].classList.toggle('on', on);
-    }
+    renderProviders();
     tglIdem.classList.toggle('on', !!(selected && selected.idempotent));
     tglDestroy.classList.toggle('on', !!(selected && selected.config && selected.config.destroyAfter));
     budget.textContent = selected && selected.config ? selected.config.maxHours + 'h' : '—';
@@ -258,13 +309,56 @@
     if (!arts.length) {
       artList.innerHTML = '<p class="hint">No artifacts yet. They appear when a run verifies.</p>';
     } else {
-      artList.innerHTML = arts.map(function (a) {
-        return '<div class="art"><div class="art-top"><span class="art-name mono">' + esc(a.id) +
-          '</span><span class="art-size mono">' + esc(a.size) + '</span></div>' +
-          '<div class="art-note">' + esc(a.note) + '</div></div>';
-      }).join('');
+      artList.innerHTML = '';
+      arts.forEach(function (a) {
+        var card = document.createElement('button');
+        card.className = 'art';
+        card.type = 'button';
+        // Server-trusted JSON (from the API, never markup). The URL and name
+        // live on the element as properties, not data-attributes, so they are
+        // never read back out of the DOM as untrusted text.
+        card._artUrl = a.url;
+        card._artName = a.id;
+        var top = document.createElement('div'); top.className = 'art-top';
+        var nm = document.createElement('span'); nm.className = 'art-name mono'; nm.textContent = a.id;
+        var sz = document.createElement('span'); sz.className = 'art-size mono'; sz.textContent = a.size;
+        top.appendChild(nm); top.appendChild(sz);
+        var note = document.createElement('div'); note.className = 'art-note'; note.textContent = a.note;
+        card.appendChild(top); card.appendChild(note);
+        artList.appendChild(card);
+      });
     }
   }
+
+  /* ---------- artifact viewer ---------- */
+
+  var viewer = document.querySelector('[data-console="artifact-viewer"]');
+  var viewerName = document.querySelector('[data-console="artifact-name"]');
+  var viewerBody = document.querySelector('[data-console="artifact-body"]');
+  var viewerDl = document.querySelector('[data-console="artifact-download"]');
+
+  artList.addEventListener('click', function (e) {
+    var card = e.target.closest('.art');
+    if (!card || typeof card._artUrl !== 'string') return;
+    // Trusted value from the API response (stored as a JS property above),
+    // same-origin artifact path. Never parsed out of the DOM.
+    var url = card._artUrl;
+    viewerName.textContent = card._artName;
+    viewerBody.textContent = 'loading…';
+    viewerDl.setAttribute('href', url);
+    viewer.hidden = false;
+    fetch(url, { credentials: 'same-origin' })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+      .then(function (text) { viewerBody.textContent = text; })
+      .catch(function () { viewerBody.textContent = 'could not load artifact.'; });
+  });
+
+  document.querySelector('[data-console="artifact-close"]').addEventListener('click', function () {
+    viewer.hidden = true;
+  });
+  viewer.addEventListener('click', function (e) {
+    if (e.target === viewer) viewer.hidden = true;  // click backdrop to close
+  });
 
   /* ---------- header / actions ---------- */
 
@@ -320,7 +414,8 @@
   newBtn.addEventListener('click', function () {
     if (busy) return;
     busy = true;
-    api('/api/tasks', { method: 'POST', body: JSON.stringify({ title: '' }) })
+    var prov = localStorage.getItem('ags-provider') || 'azure';
+    api('/api/tasks', { method: 'POST', body: JSON.stringify({ title: '', provider: prov }) })
       .then(function (t) { return refreshList().then(function () { return select(t.id); }); })
       .catch(function () { /* surfaced by gate if auth broke */ })
       .then(function () { busy = false; input.focus(); });

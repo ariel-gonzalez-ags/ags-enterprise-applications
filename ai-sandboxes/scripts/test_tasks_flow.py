@@ -19,7 +19,6 @@ sys.path.insert(0, "api")
 _tmpdir = tempfile.mkdtemp(prefix="ags-test-")
 os.environ["DB_PATH"] = os.path.join(_tmpdir, "test.db")
 
-import httpx
 from httpx import ASGITransport, AsyncClient
 from starlette.responses import Response
 
@@ -125,6 +124,16 @@ async def main():
         assert "ansible" in kinds and "markdown" in kinds, kinds
         print(f"ok    simulated run verified: {t['checks']['total']}/{t['checks']['total']} checks, {len(t['artifacts'])} artifacts")
 
+        # 5b. artifacts are fetchable, owner-scoped, attachment-marked
+        art = next(a for a in t["artifacts"] if a["id"] == "harden.yml")
+        r = await c.get(art["url"])
+        assert r.status_code == 200, r.status_code
+        assert "attachment" in r.headers.get("content-disposition", "")
+        assert tid in r.text  # simulated content embeds the task id
+        r = await c.get(f"/api/tasks/{tid}/artifacts/nope.txt")
+        assert r.status_code == 404
+        print("ok    artifact download: 200 + attachment + content; unknown 404")
+
         # 6. chat closed after planning+run
         r = await c.post(f"/api/tasks/{tid}/messages", json={"text": "more?"})
         assert r.status_code == 409, r.status_code
@@ -141,14 +150,60 @@ async def main():
         assert r.status_code == 422
         print("ok    PATCH formats: editable in draft, slugged, empty rejected, locked after")
 
-        # 6c. delete: drafts go, verified stays
+        # 6c. every accepted format yields an artifact, including custom ones
+        r = await c.post("/api/tasks", json={"title": "custom fmt"})
+        tid3 = r.json()["id"]
+        # slug the way the user types it: multi-word, mixed case
+        await c.patch(f"/api/tasks/{tid3}", json={"formats": ["ansible", "JSON Policy Format!!"]})
+        fmts = (await c.get(f"/api/tasks/{tid3}")).json()["formats"]
+        assert "json-policy-format" in fmts, fmts
+        # simulate the planner having planned it (approve requires `planned`)
+        import app.db as _db
+        from app.models import Task as _Task
+        async with _db.session() as s:
+            t3 = await s.get(_Task, tid3)
+            t3.state = "planned"
+            await s.commit()
+        r = await c.post(f"/api/tasks/{tid3}/approve")
+        assert r.status_code == 200, r.text
+        await runner.run_task(tid3)
+        t3 = (await c.get(f"/api/tasks/{tid3}")).json()
+        ids = {a["id"] for a in t3["artifacts"]}
+        assert "harden.yml" in ids, ids
+        assert "json-policy-format.json" in ids, ids  # extension inferred from token
+        assert "runbook.md" in ids and "verify.sh" in ids
+        print("ok    custom format slugged (json-policy-format) -> .json artifact")
+
+        # 6d. delete: drafts and verified go; only a running task is refused
         r = await c.delete(f"/api/tasks/{tid2}")
         assert r.status_code == 204, r.status_code
         r = await c.get(f"/api/tasks/{tid2}")
         assert r.status_code == 404
-        r = await c.delete(f"/api/tasks/{tid}")
+        # tid3 is verified (from 6c): deletable now. (tid stays: used below.)
+        r = await c.delete(f"/api/tasks/{tid3}")
+        assert r.status_code == 204, r.status_code
+        # a running task refuses
+        r = await c.post("/api/tasks", json={"title": "runner"})
+        tidr = r.json()["id"]
+        import app.db as _db2
+        from app.models import Task as _Task2
+        async with _db2.session() as s:
+            tr = await s.get(_Task2, tidr); tr.state = "running"; await s.commit()
+        r = await c.delete(f"/api/tasks/{tidr}")
         assert r.status_code == 409, r.status_code
-        print("ok    delete: draft removed (204), verified task refused (409)")
+        print("ok    delete: draft+verified removed (204), running refused (409)")
+
+        # 6e. provider: set at create, patchable while shapeable, validated
+        r = await c.post("/api/tasks", json={"title": "pv", "provider": "gcp"})
+        assert r.json()["provider"] == "gcp", r.json()
+        tidp = r.json()["id"]
+        r = await c.patch(f"/api/tasks/{tidp}", json={"provider": "aws"})
+        assert r.json()["provider"] == "aws"
+        r = await c.patch(f"/api/tasks/{tidp}", json={"provider": "oracle"})
+        assert r.status_code == 422, r.status_code
+        r = await c.post("/api/tasks", json={"title": "bad", "provider": "oracle"})
+        assert r.status_code == 422
+        print("ok    provider: set at create, patched, invalid rejected (422)")
 
         # 6b. run narrated progress into the thread
         r = await c.get(f"/api/tasks/{tid}")
