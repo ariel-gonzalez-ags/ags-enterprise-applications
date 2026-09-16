@@ -6,7 +6,7 @@ import { brainstorm } from '../content/console.js';
 ---
 <div class="run-head">
   <div>
-    <div class="run-eyebrow mono">ags_b3f58c · gcp · sandbox running</div>
+    <div class="run-eyebrow mono">ags_b3f58c · gcp · <span class="live">sandbox running</span></div>
     <h1 class="run-title">Reproduce AKS OOMKill under load + fix</h1>
   </div>
   <div class="run-actions">
@@ -39,23 +39,27 @@ import { brainstorm } from '../content/console.js';
     display: flex; justify-content: space-between; align-items: center; gap: 16px;
     padding: 22px 28px; border-bottom: 1px solid var(--line);
   }
-  .run-eyebrow { font-size: 11.5px; color: var(--accent); margin-bottom: 6px }
-  .run-title { font-size: 20px; font-weight: 600; letter-spacing: -.02em }
+  .run-eyebrow { font-size: 11.5px; color: var(--muted); margin-bottom: 6px }
+  .run-eyebrow .live { color: var(--accent) }
+  .run-title { font-size: 18px; font-weight: 600; letter-spacing: -.02em }
   .run-actions { display: flex; gap: 10px; flex-shrink: 0 }
+  .run-actions .btn.primary { background: transparent; border: 1px solid var(--accent); color: var(--accent) }
+  .run-actions .btn.primary:hover { background: var(--accent-dim); color: var(--accent) }
 
   .thread { flex: 1; padding: 26px 28px; display: flex; flex-direction: column; gap: 18px; overflow-y: auto }
   .msg { max-width: 78% }
   .msg.user { align-self: flex-end }
   .msg.user .msg-body {
-    background: var(--accent); color: #160802; border-radius: 14px 14px 4px 14px;
+    background: var(--panel2); border: 1px solid var(--line2);
+    border-radius: 14px 14px 4px 14px;
     padding: 12px 16px; font-size: 14px; line-height: 1.55;
   }
   .msg.agent { align-self: flex-start }
-  .msg-agent-tag { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--accent); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .05em }
+  .msg-agent-tag { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .05em }
   .msg.agent .msg-body {
-    background: var(--panel2); border: 1px solid var(--line2);
-    border-radius: 14px 14px 14px 4px; padding: 14px 16px;
-    font-size: 14px; line-height: 1.6; color: var(--text); white-space: pre-line;
+    background: transparent; border-left: 2px solid var(--line2);
+    border-radius: 0; padding: 2px 0 2px 16px;
+    font-size: 14px; line-height: 1.65; color: var(--text); white-space: pre-line;
   }
 
   .composer { padding: 16px 28px 20px; border-top: 1px solid var(--line) }
@@ -71,9 +75,10 @@ import { brainstorm } from '../content/console.js';
   }
   textarea::placeholder { color: var(--muted2) }
   .send {
-    display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px;
-    background: var(--accent); color: #160802; border: none; cursor: pointer; flex-shrink: 0;
+    display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px;
+    background: transparent; border: 1px solid var(--line2); color: var(--muted);
+    cursor: pointer; flex-shrink: 0; transition: .2s;
   }
-  .send:hover { background: #FF6B38 }
+  .send:hover { border-color: var(--accent); color: var(--accent) }
   .composer-hint { margin-top: 10px; font-size: 10.5px; color: var(--muted2); text-align: center }
 </style>

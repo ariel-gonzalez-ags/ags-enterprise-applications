@@ -38,29 +38,30 @@ const stateMeta = Object.fromEntries(taskStates.map((s) => [s.id, s]));
   .rail-head { display: flex; justify-content: space-between; align-items: center }
   .rail-title { font-size: 13px; font-weight: 600; color: var(--muted); display: flex; gap: 8px; align-items: center; text-transform: uppercase; letter-spacing: .06em }
   .new-btn {
-    display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600;
-    background: var(--accent); color: #160802; padding: 7px 12px; border-radius: 9px;
+    display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 500;
+    background: transparent; color: var(--muted); padding: 6px 11px; border-radius: 9px;
+    border: 1px solid var(--line2); transition: .2s;
   }
-  .new-btn:hover { background: #FF6B38 }
+  .new-btn:hover { color: var(--text); border-color: #57301A }
 
   .task-list { display: flex; flex-direction: column; gap: 10px }
   .task {
-    display: block; background: var(--panel2); border: 1px solid var(--line2);
-    border-radius: 12px; padding: 14px; transition: .2s;
+    display: block; background: transparent; border: 1px solid transparent;
+    border-radius: 12px; padding: 12px 14px; transition: .2s;
   }
-  .task:hover { border-color: #57301A; transform: translateY(-1px) }
-  .task.active { border-color: var(--accent) }
+  .task:hover { background: var(--panel2) }
+  .task.active { background: var(--panel2); border-color: var(--line2) }
   .t-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px }
   .t-title { font-size: 13.5px; font-weight: 500; line-height: 1.4; margin-bottom: 8px }
   .t-meta { font-size: 11px; color: var(--muted2); margin-bottom: 10px }
   .t-checks { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted) }
-  .bar { flex: 1; height: 4px; border-radius: 99px; background: var(--line); overflow: hidden }
-  .fill { display: block; height: 100%; background: var(--accent); border-radius: 99px }
+  .bar { flex: 1; height: 3px; border-radius: 99px; background: var(--line); overflow: hidden }
+  .fill { display: block; height: 100%; background: var(--muted); border-radius: 99px }
 
-  .state { font-size: 10.5px; font-weight: 600; font-family: 'JetBrains Mono', monospace; padding: 3px 8px; border-radius: 6px; text-transform: uppercase; letter-spacing: .04em }
-  .s-drafting { background: var(--line); color: var(--muted) }
-  .s-planned { background: rgba(255, 177, 132, .12); color: var(--warn) }
-  .s-running { background: var(--accent-dim); color: var(--accent) }
-  .s-verified { background: var(--accent-dim); color: var(--accent) }
-  .s-delivered { background: rgba(52, 168, 83, .12); color: #5BD97E }
+  .state { font-size: 10px; font-weight: 500; font-family: 'JetBrains Mono', monospace; padding: 3px 8px; border-radius: 6px; letter-spacing: .04em; color: var(--muted); border: 1px solid var(--line2) }
+  .s-drafting { color: var(--muted2) }
+  .s-planned { color: var(--muted) }
+  .s-running { color: var(--accent); border-color: rgba(240, 86, 35, .35) }
+  .s-verified { color: var(--muted) }
+  .s-delivered { color: var(--muted2) }
 </style>
