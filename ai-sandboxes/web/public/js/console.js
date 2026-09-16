@@ -57,6 +57,9 @@
         err.status = r.status;
         throw err;
       }
+      // 204 No Content (e.g. DELETE) has no body; parsing it as JSON throws
+      // "Unexpected end of JSON input". Return undefined for empty responses.
+      if (r.status === 204) return undefined;
       return r.json();
     });
   }
@@ -135,7 +138,14 @@
       var id = del.getAttribute('data-del');
       var doDelete = function () {
         api('/api/tasks/' + encodeURIComponent(id), { method: 'DELETE' }).then(function () {
-          if (selectedId === id) { selected = null; selectedId = null; renderAll(); }
+          if (selectedId === id) {
+            // Clear the view FIRST so nothing below can leave a stale chat
+            // on screen, then tear down the dead task's stream (defensive:
+            // a stream error must never block the clear).
+            selected = null; selectedId = null;
+            try { closeStream(); } catch (e) { /* stream teardown is best-effort */ }
+            renderAll();
+          }
           refreshList();
         }).catch(function () { refreshList(); });
       };
