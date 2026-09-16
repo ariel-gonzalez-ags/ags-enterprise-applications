@@ -40,7 +40,7 @@ import Icon from './Icon.astro';
   .task-list :global(.t-right) { display: inline-flex; align-items: center; gap: 8px }
   .task-list :global(.t-del) {
     display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px;
-    color: var(--muted2); opacity: 0; transition: .15s; cursor: pointer;
+    color: var(--muted2); opacity: .55; transition: .15s; cursor: pointer;
   }
   .task-list :global(.task:hover .t-del) { opacity: 1 }
   .task-list :global(.t-del:hover) { color: var(--red, #E5484D); background: var(--raised) }
