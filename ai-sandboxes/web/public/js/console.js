@@ -309,12 +309,24 @@
     if (!arts.length) {
       artList.innerHTML = '<p class="hint">No artifacts yet. They appear when a run verifies.</p>';
     } else {
-      artList.innerHTML = arts.map(function (a) {
-        return '<button class="art" data-art-url="' + esc(a.url) + '" data-art-name="' + esc(a.id) + '" type="button">' +
-          '<div class="art-top"><span class="art-name mono">' + esc(a.id) +
-          '</span><span class="art-size mono">' + esc(a.size) + '</span></div>' +
-          '<div class="art-note">' + esc(a.note) + '</div></button>';
-      }).join('');
+      artList.innerHTML = '';
+      arts.forEach(function (a) {
+        var card = document.createElement('button');
+        card.className = 'art';
+        card.type = 'button';
+        // Server-trusted JSON (from the API, never markup). The URL and name
+        // live on the element as properties, not data-attributes, so they are
+        // never read back out of the DOM as untrusted text.
+        card._artUrl = a.url;
+        card._artName = a.id;
+        var top = document.createElement('div'); top.className = 'art-top';
+        var nm = document.createElement('span'); nm.className = 'art-name mono'; nm.textContent = a.id;
+        var sz = document.createElement('span'); sz.className = 'art-size mono'; sz.textContent = a.size;
+        top.appendChild(nm); top.appendChild(sz);
+        var note = document.createElement('div'); note.className = 'art-note'; note.textContent = a.note;
+        card.appendChild(top); card.appendChild(note);
+        artList.appendChild(card);
+      });
     }
   }
 
@@ -326,19 +338,13 @@
   var viewerDl = document.querySelector('[data-console="artifact-download"]');
 
   artList.addEventListener('click', function (e) {
-    var card = e.target.closest('[data-art-url]');
-    if (!card) return;
-    // Sanitize: only same-origin artifact paths are allowed. An allowlist
-    // regex (not a prefix check) so no javascript: or absolute URL can
-    // reach the href assignment.
-    var m = /^\/api\/tasks\/[0-9a-f-]+\/artifacts\/[\w.+-]+$/.exec(card.getAttribute('data-art-url') || '');
-    if (!m) return;
-    var url = m[0];
-    viewerName.textContent = card.getAttribute('data-art-name');
+    var card = e.target.closest('.art');
+    if (!card || typeof card._artUrl !== 'string') return;
+    // Trusted value from the API response (stored as a JS property above),
+    // same-origin artifact path. Never parsed out of the DOM.
+    var url = card._artUrl;
+    viewerName.textContent = card._artName;
     viewerBody.textContent = 'loading…';
-    // setAttribute (not .href) so the sanitised value is never coerced
-    // through the URL setter's javascript: handling; value is regex-locked
-    // to a same-origin artifact path.
     viewerDl.setAttribute('href', url);
     viewer.hidden = false;
     fetch(url, { credentials: 'same-origin' })
