@@ -61,6 +61,9 @@ jobs:
     # Fails PRs that introduce dependencies with known vulnerabilities
     # or forbidden licenses. Complements Dependabot (which updates
     # existing deps; this gates new ones).
+    # NOTE: while the repo is PRIVATE this needs GitHub Advanced Security;
+    # if it ever fails with "not supported on this repository", that's the
+    # plan tier, not the code — flip the repo public or enable GHAS.
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     permissions:
