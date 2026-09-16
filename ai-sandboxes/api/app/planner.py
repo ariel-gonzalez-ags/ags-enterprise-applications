@@ -9,7 +9,6 @@ chat text; `plan` (when the conversation is converged) carries the proposed
 deliverables/clouds/estimate for the in-chat plan card.
 """
 import json
-from typing import Optional
 
 from openai import AsyncOpenAI
 

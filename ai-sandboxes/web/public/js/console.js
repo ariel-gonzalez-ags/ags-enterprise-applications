@@ -163,7 +163,7 @@
   }
 
   function planCard(plan, editable) {
-    var accepted = selected ? selected.formats : (plan.deliverables || []).map(function (d) { return d.id; });
+    var accepted = selected.formats;  // planCard is only called with a selected task
     var opts = (plan.deliverables || []).map(function (d) {
       return optRow(d.id, d.why, accepted.indexOf(d.id) !== -1, editable);
     }).join('');
@@ -230,7 +230,6 @@
   thread.addEventListener('click', function (e) {
     var opt = e.target.closest('.choice-card.editable .opt[data-format]');
     if (!opt || opt.tagName !== 'BUTTON') return;
-    var id = opt.getAttribute('data-format');
     var on = opt.classList.toggle('on');
     opt.querySelector('.opt-check').innerHTML = on ? CHECK_SVG : '';
     var formats = [];

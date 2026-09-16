@@ -19,7 +19,6 @@ sys.path.insert(0, "api")
 _tmpdir = tempfile.mkdtemp(prefix="ags-test-")
 os.environ["DB_PATH"] = os.path.join(_tmpdir, "test.db")
 
-import httpx
 from httpx import ASGITransport, AsyncClient
 from starlette.responses import Response
 
