@@ -231,6 +231,10 @@ Operational gotchas:
   like `/app` → `/app/` carry the container port (8080) and browsers hit
   connection-refused, because the host maps 8090→8080. Never re-enable
   absolute redirects while behind a port mapping.
+- nginx `proxy_read_timeout` is 120s on `/api/` because planner chat waits
+  on an LLM round-trip. The planner client self-caps at 90s (one retry) so
+  the worst case is an in-chat degradation message, not a 504. If you lower
+  the nginx value, lower the planner's first.
 
 ## Workflow
 
