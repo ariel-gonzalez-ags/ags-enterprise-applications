@@ -19,10 +19,10 @@ import { providers } from '../content/console.js';
           {p.id === 'aws' ? (
             <picture>
               <source srcset="/assets/providers/aws-light.svg" media="(prefers-color-scheme: light)" />
-              <img src="/assets/providers/aws.svg" alt="AWS" class="prov-icon" />
+              <img src="/assets/providers/aws.svg" alt="AWS" class="prov-icon prov-icon-aws" />
             </picture>
           ) : (
-            <img src={`/assets/providers/${p.id}.svg`} alt={p.name} class="prov-icon" />
+            <img src={`/assets/providers/${p.id}.svg`} alt={p.name} class={`prov-icon${p.id === 'aws' ? ' prov-icon-aws' : ''}`} />
           )}
         </button>
       ))}
@@ -60,6 +60,7 @@ import { providers } from '../content/console.js';
   .prov-label { font-size: 10px; font-weight: 600; color: var(--muted2); text-transform: uppercase; letter-spacing: .08em; font-family: 'JetBrains Mono', monospace }
   .prov-grid { display: flex; gap: 6px }
   .prov-icon { border-radius: 3px; display: block; height: 14px; width: auto; max-width: 22px; object-fit: contain }
+  .prov-icon-aws { height: 10px }
   .prov {
     flex: 1; display: inline-flex; align-items: center; justify-content: center;
     padding: 8px 6px; border-radius: 9px; background: var(--panel2);
@@ -88,6 +89,9 @@ import { providers } from '../content/console.js';
   .task-list :global(.task:hover .t-del) { opacity: 1 }
   .task-list :global(.t-del:hover) { color: var(--red, #E5484D); background: var(--raised) }
   .task-list :global(.t-prov) { height: 13px; width: auto; max-width: 22px; border-radius: 3px; display: block; opacity: .9 }
+  /* AWS is a wide wordmark (304x182), not a square glyph like Azure/GCP;
+     shrink it so its visual mass lines up with the others. */
+  .task-list :global(.t-prov-aws) { height: 9px }
   .task-list :global(.t-title) { font-size: 13.5px; font-weight: 500; line-height: 1.4; margin-bottom: 8px }
   .task-list :global(.t-meta) { font-size: 11px; color: var(--muted2); margin-bottom: 10px }
   .task-list :global(.t-checks) { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted) }
