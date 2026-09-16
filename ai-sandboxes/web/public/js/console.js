@@ -26,6 +26,15 @@
   var artList = document.querySelector('[data-console="artifacts"]');
 
   var CHECK_SVG = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
+  var PLUS_SVG = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
+
+  var FORMAT_LABELS = {
+    terraform: 'Terraform', ansible: 'Ansible', arm: 'ARM / Bicep',
+    bash: 'Bash', powershell: 'PowerShell', markdown: 'Markdown runbook',
+  };
+  var FORMAT_KINDS = { terraform: 'iac', ansible: 'iac', arm: 'iac', bash: 'script', powershell: 'script', markdown: 'doc' };
+  var formatLabel = function (id) { return FORMAT_LABELS[id] || id; };
+  var formatKind = function (id) { return FORMAT_KINDS[id] || 'custom'; };
 
   var tasks = [];
   var selected = null;      // full detail of the selected task
@@ -73,6 +82,8 @@
     return '<img src="/assets/providers/' + esc(id) + '.svg" alt="' + esc(id) + '" class="' + cls + '">';
   }
 
+  var TRASH_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
+
   /* ---------- rail ---------- */
 
   function renderRail() {
@@ -83,9 +94,12 @@
     list.innerHTML = tasks.map(function (t) {
       var pct = t.checks.total ? Math.round((t.checks.passed / t.checks.total) * 100) : 0;
       var meta = t.state === 'running' ? 'running · ' + t.checks.passed + '/' + t.checks.total : ago(t.updated);
+      var deletable = t.state === 'drafting' || t.state === 'planned';
       return '<button class="task' + (t.id === selectedId ? ' active' : '') + '" data-task-id="' + esc(t.id) + '">' +
         '<div class="t-top"><span class="state s-' + esc(t.state) + '">' + esc(t.state) + '</span>' +
-        provImg(t.provider, 't-prov') + '</div>' +
+        '<span class="t-right">' +
+        (deletable ? '<span class="t-del" data-del="' + esc(t.id) + '" title="Delete draft">' + TRASH_SVG + '</span>' : '') +
+        provImg(t.provider, 't-prov') + '</span></div>' +
         '<div class="t-title">' + esc(t.title) + '</div>' +
         '<div class="t-meta mono"><span>' + esc(t.id.slice(0, 8)) + '</span> · <span>' + meta + '</span></div>' +
         '<div class="t-checks"><span class="bar"><span class="fill" style="width:' + pct + '%"></span></span>' +
@@ -95,23 +109,50 @@
   }
 
   list.addEventListener('click', function (e) {
+    var del = e.target.closest('[data-del]');
+    if (del) {
+      e.stopPropagation();
+      var id = del.getAttribute('data-del');
+      api('/api/tasks/' + encodeURIComponent(id), { method: 'DELETE' }).then(function () {
+        if (selectedId === id) { selected = null; selectedId = null; renderAll(); }
+        refreshList();
+      }).catch(function () { refreshList(); });
+      return;
+    }
     var card = e.target.closest('[data-task-id]');
     if (card) select(card.getAttribute('data-task-id'));
   });
 
   /* ---------- thread ---------- */
 
-  function planCard(plan) {
+  function optRow(id, why, on, editable) {
+    var tag = editable ? 'button' : 'div';
+    return '<' + tag + ' class="opt' + (on ? ' on' : '') + '" data-format="' + esc(id) + '"' +
+      (editable ? ' type="button"' : '') + '>' +
+      '<span class="opt-check">' + (on ? CHECK_SVG : '') + '</span>' +
+      '<span class="opt-name">' + esc(formatLabel(id)) + ' <span class="opt-kind mono">' + esc(formatKind(id)) + '</span></span>' +
+      '<span class="opt-why">' + esc(why || '') + '</span></' + tag + '>';
+  }
+
+  function planCard(plan, editable) {
+    var accepted = selected ? selected.formats : (plan.deliverables || []).map(function (d) { return d.id; });
     var opts = (plan.deliverables || []).map(function (d) {
-      return '<div class="opt"><span class="opt-check">' + CHECK_SVG + '</span>' +
-        '<span class="opt-name">' + esc(d.id) + '</span>' +
-        '<span class="opt-why">' + esc(d.why || '') + '</span></div>';
+      return optRow(d.id, d.why, accepted.indexOf(d.id) !== -1, editable);
     }).join('');
-    return '<div class="choice-card">' +
+    // Custom formats the user added that the planner didn't propose
+    var custom = accepted.filter(function (f) {
+      return !(plan.deliverables || []).some(function (d) { return d.id === f; });
+    });
+    opts += custom.map(function (f) { return optRow(f, 'added by you', true, editable); }).join('');
+    var addRow = editable
+      ? '<form class="opt-add"><input type="text" maxlength="32" placeholder="Add your own (e.g. helm, dockerfile)…">' +
+        '<button type="submit" title="Add">' + PLUS_SVG + '</button></form>' : '';
+    return '<div class="choice-card' + (editable ? ' editable' : '') + '">' +
       '<p class="choice-q">' + esc(plan.summary || 'Execution plan') + '</p>' +
-      '<div class="choice-opts">' + opts + '</div>' +
-      '<div class="choice-foot"><span class="choice-hint">Clouds: ' +
-      esc((plan.clouds || []).join(', ') || '—') + '</span>' +
+      '<div class="choice-opts">' + opts + '</div>' + addRow +
+      '<div class="choice-foot"><span class="choice-hint">' +
+      (editable ? 'Toggle what you want delivered; the run follows your selection.' :
+                  'Delivered set, locked at approval.') + '</span>' +
       '<span class="choice-meta">~' + esc(plan.est_hours || '?') + 'h sandbox</span></div>' +
       '</div>';
   }
@@ -125,10 +166,17 @@
       thread.innerHTML = '<p class="empty mono">No messages yet. Describe the task below to start the brainstorm.</p>';
       return;
     }
-    thread.innerHTML = selected.messages.map(function (m) {
+    var editable = selected && (selected.state === 'drafting' || selected.state === 'planned');
+    // latest agent message carrying a plan: that's the live card
+    var latestPlanIdx = -1;
+    selected.messages.forEach(function (m, i) {
+      if (m.role === 'agent' && m.plan) latestPlanIdx = i;
+    });
+    thread.innerHTML = selected.messages.map(function (m, i) {
       var tag = m.role === 'agent'
         ? '<div class="msg-agent-tag mono">planner agent</div>' : '';
-      var card = (m.role === 'agent' && m.plan) ? planCard(m.plan) : '';
+      var card = (m.role === 'agent' && m.plan)
+        ? planCard(m.plan, editable && i === latestPlanIdx) : '';
       return '<div class="msg ' + m.role + '">' + tag +
         '<div class="msg-body">' + esc(m.text) + '</div>' + card + '</div>';
     }).join('');
@@ -147,6 +195,51 @@
     thread.appendChild(el);
     thread.scrollTop = thread.scrollHeight;
     return el;
+  }
+
+  // Plan card interactions: toggling options / adding a custom deliverable
+  // PATCHes the task's accepted format set. Optimistic paint, server truth.
+  thread.addEventListener('click', function (e) {
+    var opt = e.target.closest('.choice-card.editable .opt[data-format]');
+    if (!opt || opt.tagName !== 'BUTTON') return;
+    var id = opt.getAttribute('data-format');
+    var on = opt.classList.toggle('on');
+    opt.querySelector('.opt-check').innerHTML = on ? CHECK_SVG : '';
+    var formats = [];
+    thread.querySelectorAll('.choice-card.editable .opt.on').forEach(function (el) {
+      formats.push(el.getAttribute('data-format'));
+    });
+    if (!formats.length) {  // never allow an empty deliverable set
+      opt.classList.add('on');
+      opt.querySelector('.opt-check').innerHTML = CHECK_SVG;
+      return;
+    }
+    patchFormats(formats);
+  });
+
+  thread.addEventListener('submit', function (e) {
+    var form = e.target.closest('.opt-add');
+    if (!form) return;
+    e.preventDefault();
+    var inputEl = form.querySelector('input');
+    var val = inputEl.value.trim().toLowerCase().replace(/[^a-z0-9-_]/g, '');
+    if (!val) return;
+    var formats = selected.formats.slice();
+    if (formats.indexOf(val) === -1) formats.push(val);
+    inputEl.value = '';
+    patchFormats(formats);
+  });
+
+  function patchFormats(formats) {
+    api('/api/tasks/' + encodeURIComponent(selectedId), {
+      method: 'PATCH', body: JSON.stringify({ formats: formats }),
+    }).then(function (t) {
+      selected = t;
+      renderAll();
+      refreshList();
+    }).catch(function () {
+      select(selectedId);  // server rejected (e.g. locked): resync to truth
+    });
   }
 
   /* ---------- inspector ---------- */

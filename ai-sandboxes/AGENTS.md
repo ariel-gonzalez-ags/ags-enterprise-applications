@@ -211,6 +211,8 @@ that. Marketing pages stay prerendered (static) regardless.
 | `POST /api/tasks` `{title}` | create in `drafting`, returns the task |
 | `GET /api/tasks/{id}` | full detail: messages, artifacts, config |
 | `POST /api/tasks/{id}/messages` `{text}` | **202 instantly**; planner replies in background, lands in thread |
+| `PATCH /api/tasks/{id}` `{formats}` | user edits the accepted deliverable set (drafting/planned only); slugs, dedupes, min 1 |
+| `DELETE /api/tasks/{id}` | 204; drafting/planned only. running/verified/delivered are records: 409 |
 | `POST /api/tasks/{id}/approve` | `planned` → `running`, spawns the simulated run |
 
 **Chat and runs are asynchronous by design.** The POST never waits on the

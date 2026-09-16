@@ -37,6 +37,13 @@ import Icon from './Icon.astro';
   .task-list :global(.task:hover) { background: var(--panel2) }
   .task-list :global(.task.active) { background: var(--panel2); border-color: var(--line) }
   .task-list :global(.t-top) { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px }
+  .task-list :global(.t-right) { display: inline-flex; align-items: center; gap: 8px }
+  .task-list :global(.t-del) {
+    display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px;
+    color: var(--muted2); opacity: 0; transition: .15s; cursor: pointer;
+  }
+  .task-list :global(.task:hover .t-del) { opacity: 1 }
+  .task-list :global(.t-del:hover) { color: var(--red, #E5484D); background: var(--raised) }
   .task-list :global(.t-prov) { height: 13px; width: auto; max-width: 22px; border-radius: 3px; display: block; opacity: .9 }
   .task-list :global(.t-title) { font-size: 13.5px; font-weight: 500; line-height: 1.4; margin-bottom: 8px }
   .task-list :global(.t-meta) { font-size: 11px; color: var(--muted2); margin-bottom: 10px }

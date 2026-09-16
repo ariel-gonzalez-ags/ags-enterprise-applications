@@ -130,6 +130,26 @@ async def main():
         assert r.status_code == 409, r.status_code
         print("ok    chat rejected once task is verified")
 
+        # 6a. deliverable set is user-editable while shapeable
+        r = await c.patch(f"/api/tasks/{tid}", json={"formats": ["ansible"]})
+        assert r.status_code == 409, r.status_code  # verified: locked
+        r2 = await c.post("/api/tasks", json={"title": "scratch"})
+        tid2 = r2.json()["id"]
+        r = await c.patch(f"/api/tasks/{tid2}", json={"formats": ["ansible", "Helm Chart!!"]})
+        assert r.status_code == 200 and r.json()["formats"] == ["ansible", "helm-chart"]
+        r = await c.patch(f"/api/tasks/{tid2}", json={"formats": []})
+        assert r.status_code == 422
+        print("ok    PATCH formats: editable in draft, slugged, empty rejected, locked after")
+
+        # 6c. delete: drafts go, verified stays
+        r = await c.delete(f"/api/tasks/{tid2}")
+        assert r.status_code == 204, r.status_code
+        r = await c.get(f"/api/tasks/{tid2}")
+        assert r.status_code == 404
+        r = await c.delete(f"/api/tasks/{tid}")
+        assert r.status_code == 409, r.status_code
+        print("ok    delete: draft removed (204), verified task refused (409)")
+
         # 6b. run narrated progress into the thread
         r = await c.get(f"/api/tasks/{tid}")
         notes = [m["text"] for m in r.json()["messages"] if m["role"] == "agent"]

@@ -96,6 +96,51 @@ async def get_task(task_id: str, user: dict = Depends(_user)):
         return _task_json(t, detail=True)
 
 
+@router.delete("/tasks/{task_id}", status_code=204)
+async def delete_task(task_id: str, user: dict = Depends(_user)):
+    """Drafting/planned tasks are disposable; running/verified/delivered ones
+    are a record and can't be removed."""
+    async with db.session() as s:
+        t = await s.get(Task, task_id)
+        if t is None or t.owner_sub != user["sub"]:
+            raise HTTPException(404, "task not found")
+        if t.state not in ("drafting", "planned"):
+            raise HTTPException(409, f"task is {t.state}; only drafts can be deleted")
+        await s.delete(t)
+        await s.commit()
+
+
+class PatchTask(BaseModel):
+    formats: list[str] = Field(min_length=1, max_length=12)
+
+
+def _slug(raw: str) -> str:
+    """Lowercase, spaces to dashes, keep [a-z0-9-_]; matches the client."""
+    import re
+    return re.sub(r"[^a-z0-9-_]", "", raw.strip().lower().replace(" ", "-"))[:32]
+
+@router.patch("/tasks/{task_id}")
+async def patch_task(task_id: str, body: PatchTask, user: dict = Depends(_user)):
+    """User edits the accepted deliverable set (toggling plan-card options or
+    adding a custom one). Only while the task is still shapeable."""
+    clean: list[str] = []
+    for f in body.formats:
+        slug = _slug(f)
+        if slug and slug not in clean:
+            clean.append(slug)
+    if not clean:
+        raise HTTPException(422, "at least one deliverable is required")
+    async with db.session() as s:
+        t = await s.get(Task, task_id)
+        if t is None or t.owner_sub != user["sub"]:
+            raise HTTPException(404, "task not found")
+        if t.state not in ("drafting", "planned"):
+            raise HTTPException(409, f"task is {t.state}; deliverables are locked")
+        t.formats = clean
+        await s.commit()
+        return _task_json(t, detail=True)
+
+
 class ChatIn(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
 
