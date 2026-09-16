@@ -1,12 +1,12 @@
 ---
 // P6 "deep magma" design tokens. Import once in Base.astro; never hardcode
-// these values elsewhere — always reference var(--token-name).
+// these values elsewhere: always reference var(--token-name).
 ---
 <style is:global>
   :root {
-    /* Elevation scale — 4 clearly separated shades, neutral graphite:
+    /* Elevation scale: 4 clearly separated shades, neutral graphite:
        bg (page) < panel (rails) < panel2 (cards/bubbles) < raised (hover/active).
-       Surfaces carry no orange cast — ember only appears as --accent. */
+       Surfaces carry no orange cast; ember only appears as --accent. */
     --bg: #08080A;
     --panel: #101013;
     --panel2: #17171C;
@@ -16,7 +16,7 @@
     --text: #F0EFEC;
     --muted: #9D9DA8;
     --muted2: #6A6A76;
-    --accent: #F05623;          /* magma ember — signal only, never decoration */
+    --accent: #F05623;          /* magma ember: signal only, never decoration */
     --accent-dim: rgba(240, 86, 35, .12);
     --warn: #FFB184;
     --red: #E5484D;
@@ -30,7 +30,7 @@
   }
 
   [data-theme='light'] {
-    /* Light "paper" theme — neutral warm-gray inversion of the dark scale. */
+    /* Light "paper" theme: neutral warm-gray inversion of the dark scale. */
     --bg: #F3F3F4;
     --panel: #FFFFFF;
     --panel2: #F8F8F9;
@@ -61,7 +61,7 @@
   }
   ::selection { background: var(--accent); color: #FFFFFF }
 
-  /* Scrollbars — thin, token-keyed, unobtrusive */
+  /* Scrollbars: thin, token-keyed, unobtrusive */
   * { scrollbar-width: thin; scrollbar-color: var(--line2) transparent }
   *::-webkit-scrollbar { width: 9px; height: 9px }
   *::-webkit-scrollbar-track { background: transparent }

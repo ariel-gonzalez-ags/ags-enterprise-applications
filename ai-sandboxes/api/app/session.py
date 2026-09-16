@@ -1,5 +1,5 @@
 """Signed, self-contained session cookie (itsdangerous). No server-side store
-yet — when the product needs persistence, add it behind get_session()."""
+yet; when the product needs persistence, add it behind get_session()."""
 import time
 from typing import Optional
 

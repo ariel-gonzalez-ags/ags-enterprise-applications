@@ -1,4 +1,4 @@
-// Agisphire marketing site — Astro static build.
+// Agisphire marketing site: Astro static build.
 import { defineConfig } from 'astro/config';
 
 export default defineConfig({

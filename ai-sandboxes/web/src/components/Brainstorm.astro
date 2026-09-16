@@ -1,70 +1,28 @@
 ---
-// Center stage: the brainstorm conversation with the planner agent,
-// plus a message composer. The selected run's summary header sits on top.
+// Center stage: brainstorm conversation with the planner agent + composer.
+// Shell only: console.js renders the thread from GET /api/tasks/{id} and
+// posts to /api/tasks/{id}/messages.
 import Icon from './Icon.astro';
-import { brainstorm } from '../content/console.js';
 ---
 <div class="run-head">
   <div>
-    <div class="run-eyebrow mono">ags_b3f58c · gcp · <span class="live">sandbox running</span></div>
-    <h1 class="run-title">Reproduce AKS OOMKill under load + fix</h1>
+    <div class="run-eyebrow mono" data-console="run-eyebrow">no task selected</div>
+    <h1 class="run-title" data-console="run-title">Pick a task, or start a new one</h1>
   </div>
   <div class="run-actions">
-    <button class="btn">Pause</button>
-    <button class="btn primary">Approve plan</button>
+    <button class="btn primary" data-console="approve" hidden>Approve plan</button>
   </div>
 </div>
 
-<div class="thread">
-  {brainstorm.map((m) => (
-    <div class={`msg ${m.role}`}>
-      {m.role === 'agent' && (
-        <div class="msg-agent-tag mono"><Icon name="bolt" size={13} /> {m.agent} agent</div>
-      )}
-      <div class="msg-body">{m.text}</div>
-    </div>
-  ))}
-
-  <!-- Follow-up choice: the planner proposes output formats; user picks
-       any subset (or edits the proposal). Rendered as a chat artifact. -->
-  <div class="msg agent">
-    <div class="msg-agent-tag mono"><Icon name="doc" size={13} /> deliverables</div>
-    <div class="choice-card">
-      <p class="choice-q">Based on the plan, I'd deliver these. Toggle what you want:</p>
-      <div class="choice-opts">
-        <button class="opt on">
-          <span class="opt-check"><Icon name="check" size={11} /></span>
-          <span class="opt-name">Terraform <span class="opt-kind mono">iac</span></span>
-          <span class="opt-why">winning provider, idempotent apply</span>
-        </button>
-        <button class="opt on">
-          <span class="opt-check"><Icon name="check" size={11} /></span>
-          <span class="opt-name">Markdown runbook <span class="opt-kind mono">doc</span></span>
-          <span class="opt-why">benchmark evidence + how to re-run</span>
-        </button>
-        <button class="opt">
-          <span class="opt-check"><Icon name="check" size={11} /></span>
-          <span class="opt-name">Bash <span class="opt-kind mono">script</span></span>
-          <span class="opt-why">quick manual path, if you want it</span>
-        </button>
-        <button class="opt">
-          <span class="opt-check"><Icon name="check" size={11} /></span>
-          <span class="opt-name">Ansible <span class="opt-kind mono">iac</span></span>
-          <span class="opt-why">only if config management matters later</span>
-        </button>
-      </div>
-      <div class="choice-foot">
-        <span class="choice-hint">The planner proposes; you decide. Ask for others in chat — ARM, PowerShell, anything.</span>
-        <button class="btn primary sm">Confirm deliverables</button>
-      </div>
-    </div>
-  </div>
+<div class="thread" data-console="thread">
+  <p class="empty mono">Select a task from the library to see the conversation.</p>
 </div>
 
 <div class="composer">
   <div class="composer-box">
-    <textarea rows="2" placeholder="Describe the task, answer the planner, or attach context… (mock)"></textarea>
-    <button class="send" title="Send"><Icon name="send" size={16} /></button>
+    <textarea rows="2" data-console="input"
+      placeholder="Describe the task, answer the planner, or attach context…"></textarea>
+    <button class="send" data-console="send" title="Send"><Icon name="send" size={16} /></button>
   </div>
   <div class="composer-hint mono">planner agent · sandbox-scoped credentials · nothing touches production</div>
 </div>
@@ -78,24 +36,30 @@ import { brainstorm } from '../content/console.js';
   .run-eyebrow .live { color: var(--accent) }
   .run-title { font-size: 18px; font-weight: 600; letter-spacing: -.02em }
   .run-actions { display: flex; gap: 10px; flex-shrink: 0 }
+  /* .btn's display rule beats the UA [hidden] style: enforce it */
+  .run-actions .btn[hidden] { display: none }
   .run-actions .btn.primary { background: transparent; border: 1px solid var(--accent); color: var(--accent) }
   .run-actions .btn.primary:hover { background: var(--accent-dim); color: var(--accent) }
 
   .thread { flex: 1; padding: 26px 28px; display: flex; flex-direction: column; gap: 18px; overflow-y: auto }
-  .msg { max-width: 78% }
-  .msg.user { align-self: flex-end }
-  .msg.user .msg-body {
+  /* Messages render at runtime via console.js: global selectors under
+     .thread so Astro scoping doesn't drop their styles. */
+  .thread :global(.empty) { font-size: 11.5px; color: var(--muted2) }
+  .thread :global(.msg) { max-width: 78% }
+  .thread :global(.msg.user) { align-self: flex-end }
+  .thread :global(.msg.user .msg-body) {
     background: var(--panel2); border: 1px solid var(--line);
     border-radius: 14px 14px 4px 14px;
     padding: 12px 16px; font-size: 14px; line-height: 1.55;
   }
-  .msg.agent { align-self: flex-start }
-  .msg-agent-tag { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .05em }
-  .msg.agent .msg-body {
+  .thread :global(.msg.agent) { align-self: flex-start }
+  .thread :global(.msg-agent-tag) { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .05em }
+  .thread :global(.msg.agent .msg-body) {
     background: transparent; border-left: 2px solid var(--line2);
     border-radius: 0; padding: 2px 0 2px 16px;
     font-size: 14px; line-height: 1.65; color: var(--text); white-space: pre-line;
   }
+  .thread :global(.msg.pending .msg-body) { color: var(--muted2); font-style: italic }
 
   .composer { padding: 16px 28px 20px; border-top: 1px solid var(--line) }
   .composer-box {
@@ -115,36 +79,44 @@ import { brainstorm } from '../content/console.js';
     cursor: pointer; flex-shrink: 0; transition: .2s;
   }
   .send:hover { border-color: var(--accent); color: var(--accent) }
+  .send:disabled { opacity: .4; cursor: default }
   .composer-hint { margin-top: 10px; font-size: 10.5px; color: var(--muted2); text-align: center }
 
-  /* In-chat choice cards — planner proposes options, user toggles */
-  .choice-card {
+  /* Plan card: rendered by console.js when a message carries a plan */
+  .thread :global(.choice-card) {
     background: var(--panel2); border: 1px solid var(--line); border-radius: 12px;
-    padding: 16px; max-width: 520px;
+    padding: 16px; max-width: 520px; margin-top: 10px;
   }
-  .choice-q { font-size: 13.5px; color: var(--text); margin-bottom: 12px }
-  .choice-opts { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px }
-  .opt {
+  .thread :global(.choice-q) { font-size: 13.5px; color: var(--text); margin-bottom: 12px }
+  .thread :global(.choice-opts) { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px }
+  .thread :global(.choice-card .opt) {
     display: flex; align-items: center; gap: 11px; text-align: left;
-    background: transparent; border: 1px solid var(--line); border-radius: 10px;
-    padding: 10px 12px; cursor: pointer; transition: .15s;
+    background: var(--raised); border: 1px solid var(--line2); border-radius: 10px;
+    padding: 10px 12px; width: 100%; color: inherit; font: inherit;
   }
-  .opt:hover { background: var(--raised) }
-  .opt.on { background: var(--raised); border-color: var(--line2) }
-  .opt-check {
-    width: 16px; height: 16px; border-radius: 5px; border: 1px solid var(--line2);
-    display: grid; place-items: center; color: transparent; flex-shrink: 0; transition: .15s;
+  .thread :global(.choice-card.editable .opt) { cursor: pointer; transition: .15s }
+  .thread :global(.choice-card.editable .opt:hover) { border-color: var(--accent) }
+  .thread :global(.choice-card .opt:not(.on)) { opacity: .5 }
+  .thread :global(.opt-check) {
+    width: 16px; height: 16px; border-radius: 5px; border: 1px solid var(--accent);
+    display: grid; place-items: center; color: var(--accent); flex-shrink: 0;
   }
-  .opt.on .opt-check { border-color: var(--accent); color: var(--accent) }
-  .opt-name { font-size: 13px; font-weight: 500; color: var(--muted); display: flex; align-items: baseline; gap: 7px }
-  .opt.on .opt-name { color: var(--text) }
-  .opt-kind { font-size: 9px; color: var(--muted2); text-transform: uppercase; letter-spacing: .05em }
-  .opt-why { margin-left: auto; font-size: 11.5px; color: var(--muted2) }
-  .choice-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid var(--line); padding-top: 12px }
-  .choice-hint { font-size: 11px; color: var(--muted2); line-height: 1.45; max-width: 320px }
-  .btn.sm { font-size: 12.5px; padding: 8px 13px }
-  .choice-foot .btn.primary {
-    background: transparent; border: 1px solid var(--accent); color: var(--accent);
+  .thread :global(.opt:not(.on) .opt-check) { border-color: var(--line2) }
+  .thread :global(.opt-add) { display: flex; gap: 8px; margin-bottom: 14px }
+  .thread :global(.opt-add input) {
+    flex: 1; background: var(--panel); border: 1px dashed var(--line2); border-radius: 10px;
+    padding: 9px 12px; color: var(--text); font: inherit; font-size: 12.5px; outline: none;
   }
-  .choice-foot .btn.primary:hover { background: var(--accent-dim) }
+  .thread :global(.opt-add input:focus) { border-color: var(--accent); border-style: solid }
+  .thread :global(.opt-add button) {
+    width: 36px; border-radius: 10px; background: transparent; border: 1px solid var(--line2);
+    color: var(--muted); cursor: pointer; display: grid; place-items: center; transition: .15s;
+  }
+  .thread :global(.opt-add button:hover) { border-color: var(--accent); color: var(--accent) }
+  .thread :global(.opt-name) { font-size: 13px; font-weight: 500; color: var(--text); display: flex; align-items: baseline; gap: 7px; text-transform: capitalize }
+  .thread :global(.opt-kind) { font-size: 9px; color: var(--muted2); text-transform: uppercase; letter-spacing: .05em }
+  .thread :global(.opt-why) { margin-left: auto; font-size: 11.5px; color: var(--muted2) }
+  .thread :global(.choice-foot) { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid var(--line); padding-top: 12px }
+  .thread :global(.choice-hint) { font-size: 11px; color: var(--muted2); line-height: 1.45; max-width: 320px }
+  .thread :global(.choice-meta) { font-size: 11px; color: var(--muted); font-family: 'JetBrains Mono', monospace }
 </style>

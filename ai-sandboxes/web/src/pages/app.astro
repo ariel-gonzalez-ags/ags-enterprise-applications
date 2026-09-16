@@ -1,25 +1,29 @@
 ---
-// /app — the console. Library (left) · brainstorm/run (center) · config (right).
+// /app: the console. Library (left) · brainstorm/run (center) · config (right).
 // Gate: auth.js checks /api/auth/me; anonymous users get the sign-in prompt.
 import ConsoleShell from '../components/ConsoleShell.astro';
 import TaskRail from '../components/TaskRail.astro';
 import Brainstorm from '../components/Brainstorm.astro';
 import RunInspector from '../components/RunInspector.astro';
 ---
-<ConsoleShell title="Agisphire — Console">
+<ConsoleShell title="Agisphire: Console">
   <TaskRail slot="rail" />
   <Brainstorm slot="stage" />
   <RunInspector slot="inspector" />
 </ConsoleShell>
 
 <script>
-  // Gate: anonymous → reveal overlay; signed in → console stays as-is.
+  // Gate: anonymous → reveal overlay; signed in → boot the console client.
   fetch('/api/auth/me', { credentials: 'same-origin' })
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (data) {
       if (!data || !data.user) {
         document.getElementById('gate').hidden = false;
+        return;
       }
+      var s = document.createElement('script');
+      s.src = '/js/console.js';
+      document.body.appendChild(s);
     })
     .catch(function () {
       document.getElementById('gate').hidden = false;

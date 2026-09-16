@@ -1,4 +1,4 @@
-// Auth widget — the ONLY client-side JavaScript on the site.
+// Auth widget: the ONLY client-side JavaScript on the site.
 // Reads /api/auth/me and swaps the nav "Sign in" button for the user's
 // avatar + logout. Scoped exception to the no-JS rule (see AGENTS.md §8).
 (function () {
@@ -7,7 +7,9 @@
   var LOGOUT_URL = '/api/auth/logout';
 
   function loginUrl() {
-    return LOGIN_URL + '?next=' + encodeURIComponent(location.pathname);
+    // Signing in means entering the product: always land on the console.
+    // (Previously this echoed the current page, which stranded users on /.)
+    return LOGIN_URL + '?next=' + encodeURIComponent('/app');
   }
 
   function wireSignIn(el) {
@@ -60,7 +62,7 @@
 
       menu.appendChild(who);
 
-      // Theme: system / light / dark — persists in localStorage, bootstrap
+      // Theme: system / light / dark: persists in localStorage, bootstrap
       // in Base.astro reads it before first paint.
       var themeBox = document.createElement('div');
       themeBox.className = 'usermenu-theme';

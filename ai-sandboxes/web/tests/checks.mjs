@@ -1,5 +1,5 @@
 // Smoke tests for the built site. Run: node tests/checks.mjs
-// These run inside the Docker build (see ../../Dockerfile) — a failing check
+// These run inside the Docker build (see ../../Dockerfile): a failing check
 // fails the image build, so nothing broken can ship.
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -37,7 +37,7 @@ check('home: demo section', home.includes('id="demo"') && home.includes('CIS Lev
 check('home: features section', home.includes('id="features"') && home.includes('True isolation'));
 check('home: stats section', home.includes('median request') && home.includes('4,320'));
 check('home: CTA section', home.includes('id="cta"') && home.includes('Ship the work'));
-check('home: footer note', home.includes('concept mockup'));
+check('home: footer note', home.toLowerCase().includes('concept mockup'));
 // Astro may minify/lowercase inlined CSS differently across versions —
 // match tokens tolerantly rather than asserting an exact byte sequence.
 check('home: design tokens inlined', /--accent\s*:\s*#f05623/i.test(home));
@@ -50,17 +50,23 @@ check('home: auth.js included (Base auth prop)', home.includes('/js/auth.js'));
 check('home: hidden console link for signed-in users', home.includes('data-auth="protected-link"'));
 
 const app = read('app/index.html');
-check('app: console three-pane shell', app.includes('TaskRail') || app.includes('task-list'));
-check('app: brainstorm thread renders', app.includes('planner agent'));
+check('app: console three-pane shell', app.includes('data-console="task-list"') && app.includes('data-console="thread"'));
+check('app: console data hooks present', app.includes('data-console="send"') && app.includes('data-console="approve"') && app.includes('data-console="artifacts"'));
 check('app: run inspector renders', app.includes('Target clouds') && app.includes('Idempotent result'));
+check('app: no mock data shipped', !app.includes('ags_b3f58c') && !app.includes('OOMKill'));
 check('app: gate overlay present', app.includes('gate-overlay'));
 check('app: gate script calls /api/auth/me', app.includes('/api/auth/me'));
+check('app: gate boots console.js for signed-in users', app.includes('/js/console.js'));
 check('app: gate has Google sign-in CTA', /\/api\/auth\/login\?next=\/app/.test(app) && app.includes('Sign in with Google'));
 check('app: console nav renders (not marketing nav)', app.includes('Search tasks') && !app.includes('How it works'));
 check('app: provider logos wired', ['/assets/providers/aws.svg', '/assets/providers/azure.svg', '/assets/providers/gcp.svg'].every((p) => app.includes(p)));
 check('app: theme bootstrap present', app.includes('ags-theme') && app.includes('prefers-color-scheme'));
 check('app: light theme tokens emitted', /data-theme=.?light/i.test(app));
-check('app: output formats offered', app.includes('Terraform') && app.includes('PowerShell') && app.includes('Ansible'));
+
+const consoleJs = read('js/console.js');
+check('asset: console.js is an IIFE', consoleJs.includes('(function () {'));
+check('asset: console.js calls tasks API', consoleJs.includes('/api/tasks'));
+check('asset: console.js escapes rendered text', consoleJs.includes('&lt;'));
 
 const authJs = read('js/auth.js');
 check('asset: auth.js uses /api/auth/me', authJs.includes('/api/auth/me'));
