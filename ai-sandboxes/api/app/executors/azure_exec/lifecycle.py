@@ -157,9 +157,6 @@ def teardown(az, settings, sb: Sandbox) -> dict:
     }
 
 
-_TERMINAL = {"Succeeded", "Failed", "Stopped", "Canceled"}
-
-
 def container_state(az, sb: Sandbox) -> str:
     """Current provisioning state of the agent container group."""
     grp = az["aci"].container_groups.get(sb.rg_name, sb.container_group)
@@ -179,7 +176,9 @@ def container_runtime_state(az, sb: Sandbox) -> str:
             if cur is not None:
                 return getattr(cur, "state", "Unknown")
     except Exception:
-        pass
+        # Best-effort state probe: if ACI read/parsing fails, fall back to
+        # "Unknown" so the caller can continue polling until timeout/terminal.
+        return "Unknown"
     return "Unknown"
 
 
@@ -221,7 +220,9 @@ def container_exit_code(az, sb: Sandbox) -> int:
             if cur is not None and getattr(cur, "exit_code", None) is not None:
                 return cur.exit_code
     except Exception:
-        pass
+        # Best-effort read: ACI state can be temporarily unavailable; treat as
+        # unknown exit code so callers can continue polling/teardown flow.
+        return -1
     return -1
 
 

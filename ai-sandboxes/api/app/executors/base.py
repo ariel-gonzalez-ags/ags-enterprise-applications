@@ -38,8 +38,8 @@ class Executor(Protocol):
         """Execute the payload, yielding log lines as they arrive, and return
         nothing; the final RunResult is delivered via `result()` after the
         iterator is exhausted. Teardown is mandatory even on failure."""
-        ...
+        raise NotImplementedError
 
     def result(self) -> RunResult:
         """The outcome of the most recent run(). Valid once run() finishes."""
-        ...
+        raise NotImplementedError

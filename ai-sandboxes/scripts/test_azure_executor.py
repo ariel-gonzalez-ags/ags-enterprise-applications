@@ -190,7 +190,7 @@ async def test_agent_loop_declares_done():
         ran.append(name)
         return "ok"
 
-    s = _settings()
+    _settings()
     os.environ["GEMINI_API_KEY"] = "k"
     s = load()
     with mock.patch.object(agent, "AsyncOpenAI") as cli:

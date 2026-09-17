@@ -164,8 +164,14 @@ class AzureExecutor:
                         for line in transcript.splitlines():
                             emit(line)
                             yield line
-                except Exception:
-                    pass
+                except Exception as log_exc:
+                    # Best-effort: the transcript capture may fail after the
+                    # sandbox died; report it but don't mask the real error.
+                    emit(
+                        "WARNING: failed to capture agent transcript before teardown: "
+                        f"{type(log_exc).__name__}: {log_exc}"
+                    )
+                    yield log[-1]
             emit(f"sandbox error: {type(exc).__name__}: {exc}")
             yield log[-1]
             self._result = RunResult(ok=False, exit_code=1, log="\n".join(log),
