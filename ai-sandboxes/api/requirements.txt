@@ -5,3 +5,10 @@ itsdangerous==2.2.*
 sqlalchemy[asyncio]==2.0.*
 aiosqlite==0.21.*
 openai==2.*
+# Azure management SDKs for the stage-2 sandbox executor (control plane:
+# resource groups, managed identities, RBAC, ACI). Auth via azure-identity.
+azure-identity==1.25.*
+azure-mgmt-resource==26.*
+azure-mgmt-msi==7.*
+azure-mgmt-authorization==4.*
+azure-mgmt-containerinstance==10.*

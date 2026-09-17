@@ -5,6 +5,11 @@
 import Icon from './Icon.astro';
 ---
 <div class="insp">
+  <section data-console="sandbox-section" hidden>
+    <h3><Icon name="layers" size={14} /> Sandbox</h3>
+    <ol class="stages" data-console="stages"></ol>
+  </section>
+
   <section>
     <h3><Icon name="sliders" size={14} /> Guarantees</h3>
     <div class="guarantee">
@@ -73,9 +78,22 @@ import Icon from './Icon.astro';
   .g-title { font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 7px; margin-bottom: 3px }
   .g-title svg { color: var(--muted) }
   .g-desc { font-size: 11.5px; color: var(--muted2); line-height: 1.5 }
-  .budget { font-size: 13px; color: var(--accent); padding-top: 2px }
+  .budget { font-size: 13px; color: var(--accent); padding: 1px 7px; cursor: pointer; border: 1px dashed var(--line2); border-radius: 6px }
+  .budget:hover { border-color: var(--accent) }
+
+  /* Sandbox lifecycle stage indicator (rendered at runtime by console.js) */
+  .stages { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px }
+  .stages :global(.stage) { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: 12.5px; color: var(--muted2) }
+  .stages :global(.stage .dot) { width: 8px; height: 8px; border-radius: 50%; background: var(--line2); flex-shrink: 0; transition: .2s }
+  .stages :global(.stage.done) { color: var(--muted) }
+  .stages :global(.stage.done .dot) { background: var(--muted) }
+  .stages :global(.stage.active) { color: var(--text) }
+  .stages :global(.stage.active .dot) { background: var(--accent); box-shadow: 0 0 0 4px rgba(240,86,35,.15); animation: stagepulse 1.4s ease-in-out infinite }
+  @keyframes stagepulse { 50% { box-shadow: 0 0 0 7px rgba(240,86,35,0) } }
 
   .toggle { width: 34px; height: 20px; border-radius: 99px; background: var(--line2); position: relative; flex-shrink: 0; cursor: pointer; transition: .2s }
+  .toggle:hover { background: var(--muted2) }
+  .toggle.on:hover { background: var(--accent) }
   .toggle .knob { position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: var(--muted); transition: .2s }
   .toggle.on { background: var(--accent) }
   .toggle.on .knob { left: 17px; background: var(--on-accent) }

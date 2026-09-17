@@ -18,6 +18,17 @@ import Icon from './Icon.astro';
   <p class="empty mono">Select a task from the library to see the conversation.</p>
 </div>
 
+<!-- Live sandbox activity feed: shown while a run is in progress so the user
+     sees the agent working instead of a frozen thread. console.js fills it
+     from the task's live run_log. -->
+<div class="runfeed" data-console="runfeed" hidden>
+  <div class="runfeed-head">
+    <span class="runfeed-pulse"></span>
+    <span class="mono" data-console="runfeed-status">sandbox running</span>
+  </div>
+  <div class="runfeed-body mono" data-console="runfeed-body"></div>
+</div>
+
 <div class="composer">
   <div class="composer-box">
     <textarea rows="2" data-console="input"
@@ -42,6 +53,30 @@ import Icon from './Icon.astro';
   .run-actions .btn.primary:hover { background: var(--accent-dim); color: var(--accent) }
 
   .thread { flex: 1; padding: 26px 28px; display: flex; flex-direction: column; gap: 18px; overflow-y: auto }
+
+  /* Live sandbox activity feed (visible only while a run is in progress) */
+  .runfeed {
+    margin: 0 28px 16px; border: 1px solid var(--line2); border-radius: 12px;
+    background: var(--panel); overflow: hidden; flex-shrink: 0;
+  }
+  .runfeed[hidden] { display: none }
+  .runfeed-head {
+    display: flex; align-items: center; gap: 9px; padding: 10px 14px;
+    border-bottom: 1px solid var(--line); font-size: 11px; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .06em;
+  }
+  .runfeed-pulse {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
+    animation: runpulse 1.2s ease-in-out infinite;
+  }
+  @keyframes runpulse { 50% { opacity: .25; transform: scale(.8) } }
+  .runfeed-body {
+    padding: 12px 14px; max-height: 180px; overflow-y: auto;
+    font-size: 12px; line-height: 1.6; color: var(--muted); white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .runfeed-body :global(.rf-tool) { color: var(--accent) }
+  .runfeed-body :global(.rf-step) { color: var(--text) }
   /* Messages render at runtime via console.js: global selectors under
      .thread so Astro scoping doesn't drop their styles. */
   .thread :global(.empty) { font-size: 11.5px; color: var(--muted2) }

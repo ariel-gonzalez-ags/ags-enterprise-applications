@@ -71,10 +71,54 @@ the user before implementing**. See "Evolution path".
   factory (base_url/auth), not routes or services. The model must return
   strict JSON `{reply, title, plan|null}`; parse/API failures degrade to a
   plain chat reply, never a 500.
-- **Runs are simulated** (`app/runner.py`): an asyncio coroutine ticks
+- **Runs are simulated by default** (`app/runner.py`): an asyncio coroutine ticks
   `checks_passed` and lands at `verified` with per-format proof artifacts.
-  It exercises the exact task state machine real sandboxes will use, the
-  swap point is `run_task()` itself. No Celery/Redis yet.
+  It exercises the exact task state machine real sandboxes use. No Celery/Redis yet.
+- **Real execution = Azure sandboxes (opt-in)** behind the executor seam in
+  `app/executors/`. `run_task()` is the executor-agnostic state machine; the
+  executor is the only thing that knows where a run happens. `EXECUTOR_ENABLED=1`
+  + `EXECUTOR_BACKEND=azure` switches `run_task()` from the simulated timer to a
+  real run. **The backend is agentic, not terraform-only**: a Gemini tool-calling
+  (ReAct) agent (`executors/azure_exec/agent.py`) runs inside the sandbox with
+  cloud tooling and does whatever is needed to reach the outcome, then verifies.
+  **Containment is structural, never prompt-based**: the platform SP (the only
+  subscription-level credential, in env) runs in our API and, per run, creates a
+  tagged resource group + a user-assigned managed identity scoped `Contributor`
+  to that RG ONLY, then launches the agent container (ACI) under that identity.
+  The agent physically cannot leave its RG. Teardown deletes the whole RG.
+  **Chargeback**: every RG is tagged (`ags:org-id` = chargeback unit,
+  `ags:owner-sub`, `ags:task-id`, `ags:ttl-minutes`, `ags:managed-by`), and each
+  run writes a `cost_events` ledger row (models.py) reconciled later against
+  Azure Cost Management via those tags. `azure_configured` is on `/api/healthz`.
+  Package is named `azure_exec`, NOT `azure`, so it never shadows the Azure
+  SDK's `azure` namespace package (an earlier `executors/azure` broke imports).
+  azure-mgmt-resource v26: import `ResourceManagementClient` from
+  `azure.mgmt.resource.resources`, not `azure.mgmt.resource`.
+  **Azure execution gotchas (learned the hard way):** (1) ACI anonymous Docker
+  Hub pulls are rate-limited; the agent image must come from MCR
+  (`mcr.microsoft.com/azure-cli`, no anon limit) or ACR. (2) `wait_terminal`
+  must poll the container's instance `current_state.state` (Terminated), NOT
+  the group's `provisioning_state`, which flips to Succeeded the moment ACI
+  provisions the group and would otherwise tear down mid-run. (3) The agent
+  must `az login --identity` before any az call. (4) The run's done-marker is a
+  standalone `DONE` line; never substring-match it (`"DONE" in text` also
+  matches `INCOMPLETE`). (5) The full agent transcript is persisted to the task
+  as a `run.log` artifact before teardown, because teardown deletes the
+  container and its logs. (6) A sandbox-scoped Gemini key must not carry an IP
+  allowlist, or ACI's egress IP gets a 403. (7) Verification requires every
+  requested deliverable file to be present and non-empty in the transcript: an
+  agent that declares done but skips a file (leaving an empty artifact) is
+  REJECTED as incomplete, and the system prompt makes writing each file
+  mandatory. (8) The task carries `run_stage` + a live `run_log` transcript
+  (appended per line during the run) so the console can render a live activity
+  feed while the agent works, instead of a frozen thread. (9) The Azure
+  management SDK is SYNCHRONOUS: every SDK call in the executor must go through
+  `asyncio.to_thread` (the `_blocking` helper), never run inline in the async
+  generator. A blocking provision/teardown froze the whole event loop (healthz
+  timed out, the UI stuck on "loading…") until this was fixed. (10) Ensure the
+  per-RG role assignment has PROPAGATED before launching the agent
+  (`_wait_for_rbac`): launching early makes the agent's `az login --identity`
+  return "no subscriptions found" and spin.
 
 ## Directory map
 
@@ -99,7 +143,16 @@ the user before implementing**. See "Evolution path".
 │       ├── db.py         ← async engine/session factory, create_schema
 │       ├── models.py     ← Task/Message/Artifact (GUID task ids)
 │       ├── planner.py    ← Gemini via OpenAI-compat endpoint, JSON contract
-│       ├── runner.py     ← simulated sandbox run (asyncio state machine)
+│       ├── runner.py     ← run state machine (simulated timer OR real engine)
+│       ├── executors/    ← executor seam: base.py (RunPayload/RunResult contract),
+│       │   │               images.py (template gallery). get_executor() picks the
+│       │   │               backend from EXECUTOR_BACKEND
+│       │   └── azure_exec/ ← Azure backend (named so it never shadows the SDK's
+│       │       │             `azure` namespace): credentials.py (platform SP ->
+│       │       │             mgmt clients), lifecycle.py (tagged RG + per-RG
+│       │       │             identity + ACI agent container + teardown/cost row),
+│       │       │             agent.py (Gemini tool-calling loop), tags.py
+│       │       │             (chargeback tag model), executor.py (orchestration)
 │       ├── events.py     ← in-process pub/sub bus for SSE task updates
 │       ├── session.py    ← signed session cookie create/read/clear
 │       └── routers/      ← auth.py (Google OAuth) + tasks.py (product API)
@@ -196,11 +249,14 @@ simulated runs, SQLite persistence) are done. Growth from here:
    `session.get_session`. The session is identity-provider-agnostic:
    enterprise SSO (SAML/OIDC via Keycloak or Entra ID) later is a
    config-level change, not a rewrite.
-3. **Real sandbox execution** (the remaining mock: `runner.run_task()`) →
-   flag to the user first. This is the next architectural leap: cloud
-   credentials (per-user vs. platform-scoped), sandbox orchestration
-   (containers vs. per-cloud IaC), live status (polling is fine now;
-   websockets if it gets chatty).
+3. **Real sandbox execution** (stage 1 done: `app/executors/`, opt-in via
+   `EXECUTOR_ENABLED`) → the remaining swap is the backend. `local` runs on the
+   host Docker daemon today; `azure` (stage 2) adds an `AzureExecutor` behind
+   the same interface (platform service principal in env, images pushed to
+   ACR), plus real cost guardrails since it bills our subscription. BYOC
+   (per-customer cloud) is a later enterprise feature: a credential store
+   feeding the same interface. Flag to the user before stage 2: it touches
+   cloud credentials and spend.
 4. **Multi-LLM / heavier planning** → the planner is provider-agnostic by
    construction (OpenAI-compat endpoint); Vertex AI + WIF is the planned
    swap, touching only the client factory.

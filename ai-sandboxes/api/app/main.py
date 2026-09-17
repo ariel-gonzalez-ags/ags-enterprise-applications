@@ -44,6 +44,7 @@ def create_app() -> FastAPI:
             "status": "ok",
             "oauth_configured": settings.oauth_configured,
             "planner_configured": settings.planner_configured,
+            "azure_configured": settings.azure_configured,
         }
 
     app.include_router(auth.router, prefix="/api/auth", tags=["auth"])

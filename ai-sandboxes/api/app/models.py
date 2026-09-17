@@ -7,7 +7,7 @@ See AGENTS.md "Evolution path".
 import time
 import uuid
 
-from sqlalchemy import JSON, Boolean, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -39,6 +39,13 @@ class Task(Base):
     checks_passed: Mapped[int] = mapped_column(Integer, default=0)
     checks_total: Mapped[int] = mapped_column(Integer, default=0)
     agent_pending: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Lifecycle stage during a real run (provisioning/agent/verifying/teardown).
+    # Drives the console's stage indicator; empty when not running.
+    run_stage: Mapped[str] = mapped_column(String(16), default="")
+    # Live agent transcript during a run: appended as the executor emits lines
+    # so the console can render a live activity feed, not a frozen thread.
+    # Persisted; becomes part of the run's evidence after completion.
+    run_log: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[int] = mapped_column(Integer, default=now)
     updated_at: Mapped[int] = mapped_column(Integer, default=now, onupdate=now)
 
@@ -77,3 +84,24 @@ class Artifact(Base):
     created_at: Mapped[int] = mapped_column(Integer, default=now)
 
     task: Mapped[Task] = relationship(back_populates="artifacts")
+
+
+class CostEvent(Base):
+    """One row per sandbox run: the chargeback ledger. The org is the
+    chargeback unit, owner_sub attributes it to a person, and the resource
+    group + tags tie it to real Azure spend (reconciled against Cost
+    Management). estimated_usd stays 0 until that reconciliation exists; the
+    duration is exact because we create and destroy the sandbox ourselves."""
+    __tablename__ = "cost_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    task_id: Mapped[str] = mapped_column(String(36), index=True)
+    run_id: Mapped[str] = mapped_column(String(32), default="")
+    org_id: Mapped[str] = mapped_column(String(64), index=True, default="")
+    owner_sub: Mapped[str] = mapped_column(String(64), index=True, default="")
+    provider: Mapped[str] = mapped_column(String(16), default="azure")
+    resource_group: Mapped[str] = mapped_column(String(90), default="")
+    estimated_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[int] = mapped_column(Integer, default=now)
+    destroyed_at: Mapped[int] = mapped_column(Integer, default=0)
+    duration_seconds: Mapped[int] = mapped_column(Integer, default=0)
