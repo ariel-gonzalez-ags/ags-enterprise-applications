@@ -30,6 +30,14 @@ async def create_schema() -> None:
             await conn.execute(
                 text("ALTER TABLE tasks ADD COLUMN model VARCHAR(40) NOT NULL DEFAULT 'gemini-3.6-flash'")
             )
+        if "run_stage" not in cols:
+            await conn.execute(
+                text("ALTER TABLE tasks ADD COLUMN run_stage VARCHAR(16) NOT NULL DEFAULT ''")
+            )
+        if "run_log" not in cols:
+            await conn.execute(
+                text("ALTER TABLE tasks ADD COLUMN run_log TEXT NOT NULL DEFAULT ''")
+            )
 
 
 def session() -> AsyncSession:

@@ -23,6 +23,10 @@ services:
       BASE_URL: ${BASE_URL:-http://localhost:8090}
       COOKIE_SECURE: ${COOKIE_SECURE:-0}
       DB_PATH: /data/agisphire.db
+      # Real execution engine. Off unless set in .env.local; azure backend runs
+      # real sandboxes, anything else stays on the simulated fallback.
+      EXECUTOR_ENABLED: ${EXECUTOR_ENABLED:-0}
+      EXECUTOR_BACKEND: ${EXECUTOR_BACKEND:-azure}
     volumes:
       - ags-data:/data
     restart: unless-stopped
