@@ -29,7 +29,7 @@ _AGENT_IMAGE = "mcr.microsoft.com/azure-cli:latest"
 # Bumped on each behavior change so a running container can prove which code it
 # has (guards against the stale-image churn we hit while debugging). Surfaced
 # in the first progress line.
-BUILD = "azexec-2026-09-17.5"
+BUILD = "azexec-2026-09-17.6"
 
 
 async def _blocking(fn, *args, **kwargs):

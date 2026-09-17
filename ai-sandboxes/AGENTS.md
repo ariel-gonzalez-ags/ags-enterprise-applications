@@ -118,7 +118,20 @@ the user before implementing**. See "Evolution path".
   timed out, the UI stuck on "loading…") until this was fixed. (10) Ensure the
   per-RG role assignment has PROPAGATED before launching the agent
   (`_wait_for_rbac`): launching early makes the agent's `az login --identity`
-  return "no subscriptions found" and spin.
+  return "no subscriptions found" and spin. (11) **Agent context engineering**
+  (mirrored in the API-side `agent.py` and the in-container `agent_runner.SCRIPT`;
+  keep them in sync): the ReAct loop keeps the window lean so long runs stay
+  sharp and cheap. Each step it (a) PRUNES all but the last 3 tool results to a
+  `[cleared]` stub (full text stays in the on-disk transcript), (b) truncates
+  every tool result head+tail to ~1800 chars with the overflow spilled to a
+  sandbox file the agent can grep (restorable: pointer kept, bulk dropped), (c)
+  COMPACTS when estimated tokens (`chars//4`) cross `AGS_CTX_BUDGET` (default
+  90000): a Gemini call summarizes the older head into a brief, keeping system +
+  task + a verbatim recent tail, and (d) RECITES the goal + owed deliverables
+  every 6 steps to fight lost-in-the-middle drift. The agent also has a
+  `fetch_docs(url)` tool to consult current official docs (MS Learn, terraform
+  registry) instead of guessing from training data. Patterns borrowed from
+  OpenCode/Claude Code/OpenClaw harnesses.
 
 ## Directory map
 

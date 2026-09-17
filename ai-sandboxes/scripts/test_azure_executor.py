@@ -203,6 +203,53 @@ async def test_agent_loop_declares_done():
     print("ok    agent loop: acts with tools, then declares done with summary")
 
 
+def test_context_helpers():
+    from app.executors.azure_exec import agent
+    # clip: short text passes through, long text is head+tail with a pointer
+    assert agent._clip("short") == "short"
+    long_text = "x" * 5000
+    clipped = agent._clip(long_text)
+    assert len(clipped) < len(long_text) and "truncated" in clipped
+    assert clipped.startswith("x" * 100) and clipped.endswith("x" * 100)
+    # prune: all but the last KEEP_RECENT_TOOLS tool results become stubs,
+    # tool-call pairing intact, system/user untouched
+    msgs = [{"role": "system", "content": "s"}, {"role": "user", "content": "u"}]
+    for i in range(6):
+        msgs.append({"role": "assistant", "content": None,
+                     "tool_calls": [{"id": f"c{i}"}]})
+        msgs.append({"role": "tool", "tool_call_id": f"c{i}", "content": f"out{i}"})
+    agent._prune_tools(msgs)
+    tools = [m for m in msgs if m.get("role") == "tool"]
+    kept = [m for m in tools if not str(m["content"]).startswith("[cleared")]
+    assert len(kept) == agent._KEEP_RECENT_TOOLS
+    assert kept[-1]["content"] == "out5"  # most recent verbatim
+    assert all(str(t["content"]).startswith("[cleared") for t in tools[:-agent._KEEP_RECENT_TOOLS])
+    # est_tokens scales with content
+    assert agent._est_tokens(msgs) > 0
+    print("ok    context: clip truncates with pointer, prune keeps recent, est works")
+
+
+async def test_compact_shrinks_history():
+    from app.executors.azure_exec import agent
+    _settings(); os.environ["GEMINI_API_KEY"] = "k"
+    s = load()
+    # a long history that should compact down to system+user+brief+tail
+    msgs = [{"role": "system", "content": "sys"}, {"role": "user", "content": "task"}]
+    for i in range(12):
+        msgs.append({"role": "assistant", "content": f"step {i} " + "y" * 400})
+        msgs.append({"role": "tool", "tool_call_id": f"c{i}", "content": "out"})
+    before = len(msgs)
+    with mock.patch.object(agent, "AsyncOpenAI") as cli:
+        cli.return_value.chat.completions.create = mock.AsyncMock(
+            return_value=mock.Mock(choices=[mock.Mock(
+                message=mock.Mock(content="brief: made storage; owe main.tf"))]))
+        out = await agent._compact(cli.return_value, "gemini-2.5-flash", msgs)
+    assert len(out) < before
+    assert out[0]["role"] == "system" and "[compacted history]" in out[2]["content"]
+    assert out[-1] is msgs[-1]  # verbatim tail preserved
+    print("ok    context: compaction summarizes head, keeps verbatim tail")
+
+
 _TRANSCRIPT = """agent: planning
 tool: run_shell {"command": "az storage account create ..."}
   -> (exit 0) created
@@ -288,6 +335,8 @@ async def main():
     test_azure_configured_gate()
     test_executor_selected_for_azure()
     await test_agent_loop_declares_done()
+    test_context_helpers()
+    await test_compact_shrinks_history()
     await test_executor_end_to_end_in_container()
     await test_executor_failed_run_returns_not_ok()
     print("\nAzure executor: all checks passed (mocked, no spend)")
