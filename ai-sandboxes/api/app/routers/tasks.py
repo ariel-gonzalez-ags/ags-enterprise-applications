@@ -36,14 +36,15 @@ def _task_json(t: Task, detail: bool = False) -> dict:
         "formats": t.formats,
         "idempotent": t.idempotent,
         "checks": {"passed": t.checks_passed, "total": t.checks_total},
-        "agent_pending": t.agent_pending,
-        "updated": t.updated_at,
+        "run_stage": t.run_stage,
+        "agent_pending": t.agent_pending,        "updated": t.updated_at,
     }
     if detail:
         out["config"] = {
             "destroyAfter": t.destroy_after,
             "maxHours": t.max_hours,
         }
+        out["run_log"] = t.run_log  # live agent transcript during a run
         out["messages"] = [
             {"role": m.role, "text": m.text, "plan": m.plan_json, "at": m.created_at}
             for m in t.messages
@@ -158,6 +159,9 @@ class PatchTask(BaseModel):
     formats: list[str] | None = Field(default=None)
     provider: str | None = Field(default=None, max_length=16)
     model: str | None = Field(default=None, max_length=40)
+    idempotent: bool | None = Field(default=None)
+    destroy_after: bool | None = Field(default=None)
+    max_hours: int | None = Field(default=None, ge=1, le=24)
 
 
 def _slug(raw: str) -> str:
@@ -197,6 +201,12 @@ async def patch_task(task_id: str, body: PatchTask, user: dict = Depends(_user))
             if model not in planner.MODEL_IDS:
                 raise HTTPException(422, f"model must be one of {sorted(planner.MODEL_IDS)}")
             t.model = model
+        if body.idempotent is not None:
+            t.idempotent = body.idempotent
+        if body.destroy_after is not None:
+            t.destroy_after = body.destroy_after
+        if body.max_hours is not None:
+            t.max_hours = body.max_hours
         await s.commit()
         return _task_json(t, detail=True)
 

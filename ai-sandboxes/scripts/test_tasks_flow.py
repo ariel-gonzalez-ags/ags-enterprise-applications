@@ -205,6 +205,17 @@ async def main():
         assert r.status_code == 422
         print("ok    provider: set at create, patched, invalid rejected (422)")
 
+        # 6h. guarantee toggles: idempotent / destroy_after / max_hours PATCHable
+        r = await c.post("/api/tasks", json={"title": "guarantees"})
+        tidg = r.json()["id"]
+        r = await c.patch(f"/api/tasks/{tidg}", json={"idempotent": False, "destroy_after": False, "max_hours": 8})
+        assert r.status_code == 200, r.text
+        assert r.json()["idempotent"] is False
+        assert r.json()["config"]["destroyAfter"] is False and r.json()["config"]["maxHours"] == 8
+        r = await c.patch(f"/api/tasks/{tidg}", json={"max_hours": 99})  # out of range
+        assert r.status_code == 422, r.status_code
+        print("ok    guarantees: idempotent/destroy_after/max_hours PATCHable, range-validated")
+
         # 6g. model: selectable at create, patchable while shapeable, validated
         r = await c.get("/api/models")
         ids = {m["id"] for m in r.json()["models"]}
