@@ -353,6 +353,41 @@
     });
   }
 
+  /* ---------- guarantee toggles (idempotent / destroy-after / max-hours) ----------
+   * These PATCH the task's run guarantees. Only editable while the task is
+   * shapeable (drafting/planned); the server rejects otherwise and we resync. */
+  function patchTask(fields) {
+    if (!selectedId) return;
+    api('/api/tasks/' + encodeURIComponent(selectedId), {
+      method: 'PATCH', body: JSON.stringify(fields),
+    }).then(function (t) {
+      selected = t;
+      renderAll();
+    }).catch(function () {
+      select(selectedId);  // locked or invalid: resync to server truth
+    });
+  }
+
+  var shapeable = function () {
+    return selected && (selected.state === 'drafting' || selected.state === 'planned');
+  };
+
+  if (tglIdem) tglIdem.addEventListener('click', function () {
+    if (!shapeable()) return;
+    patchTask({ idempotent: !selected.idempotent });
+  });
+  if (tglDestroy) tglDestroy.addEventListener('click', function () {
+    if (!shapeable()) return;
+    patchTask({ destroy_after: !(selected.config && selected.config.destroyAfter) });
+  });
+  if (budget) budget.addEventListener('click', function () {
+    if (!shapeable()) return;
+    // cycle a sensible sandbox TTL: 1h -> 2h -> 4h -> 8h -> 1h
+    var cur = (selected.config && selected.config.maxHours) || 4;
+    var next = { 1: 2, 2: 4, 4: 8, 8: 1 }[cur] || 4;
+    patchTask({ max_hours: next });
+  });
+
   /* ---------- target-cloud picker (rail) ---------- */
 
   /* ---------- provider + model picker (dropdown under "New task") ---------- */
@@ -475,8 +510,38 @@
 
   /* ---------- inspector ---------- */
 
+  /* ---------- sandbox lifecycle stages ----------
+   * While a real run spins up, the API reports run_stage (provisioning ->
+   * agent -> verifying -> teardown). We render it as a step list so the user
+   * sees the environment come up instead of a static bar. Hidden when the
+   * selected task is not running. */
+  var STAGES = [
+    ['provisioning', 'Provisioning resource group'],
+    ['agent', 'Starting the agent'],
+    ['deploying', 'Deploying resources'],
+    ['verifying', 'Verifying the result'],
+    ['teardown', 'Tearing down the sandbox'],
+  ];
+  var stageSection = document.querySelector('[data-console="sandbox-section"]');
+  var stageList = document.querySelector('[data-console="stages"]');
+
+  function renderStages() {
+    if (!stageSection || !stageList) return;
+    var running = selected && selected.state === 'running';
+    if (!running) { stageSection.hidden = true; return; }
+    stageSection.hidden = false;
+    var cur = selected.run_stage || 'provisioning';
+    var curIdx = STAGES.findIndex(function (s) { return s[0] === cur; });
+    if (curIdx < 0) curIdx = 0;
+    stageList.innerHTML = STAGES.map(function (s, i) {
+      var cls = i < curIdx ? 'done' : (i === curIdx ? 'active' : '');
+      return '<li class="stage ' + cls + '"><span class="dot"></span>' + esc(s[1]) + '</li>';
+    }).join('');
+  }
+
   function renderInspector() {
     renderProviders();
+    renderStages();
     tglIdem.classList.toggle('on', !!(selected && selected.idempotent));
     tglDestroy.classList.toggle('on', !!(selected && selected.config && selected.config.destroyAfter));
     budget.textContent = selected && selected.config ? selected.config.maxHours + 'h' : '—';
@@ -551,11 +616,39 @@
     approveBtn.hidden = selected.state !== 'planned';
   }
 
+  /* ---------- live sandbox activity feed ----------
+   * While a run is in progress, the task carries run_log (the agent's live
+   * transcript, appended per line server-side). We render it as a scrolling
+   * feed so the user sees the agent working (provisioning, tool calls,
+   * verification) instead of a frozen thread. Hidden when not running. */
+  var runfeed = document.querySelector('[data-console="runfeed"]');
+  var runfeedBody = document.querySelector('[data-console="runfeed-body"]');
+  var runfeedStatus = document.querySelector('[data-console="runfeed-status"]');
+
+  function renderRunfeed() {
+    if (!runfeed || !runfeedBody) return;
+    var running = selected && selected.state === 'running';
+    if (!running) { runfeed.hidden = true; return; }
+    runfeed.hidden = false;
+    var stage = (selected.run_stage || 'provisioning');
+    runfeedStatus.textContent = 'sandbox ' + stage;
+    var lines = (selected.run_log || '').split('\n').filter(function (l) { return l.trim(); });
+    // show the most recent lines; highlight tool calls and stage transitions
+    var recent = lines.slice(-30);
+    runfeedBody.innerHTML = recent.map(function (l) {
+      var cls = l.indexOf('tool:') === 0 || l.indexOf('run_shell') >= 0 || l.indexOf('write_file') >= 0 ? 'rf-tool'
+        : (l.indexOf('Provisioning') >= 0 || l.indexOf('Launching') >= 0 || l.indexOf('Verif') >= 0 || l.indexOf('torn down') >= 0) ? 'rf-step' : '';
+      return '<div class="' + cls + '">' + esc(l) + '</div>';
+    }).join('');
+    runfeedBody.scrollTop = runfeedBody.scrollHeight;  // follow the tail
+  }
+
   function renderAll() {
     renderRail();
     renderThread();
     renderInspector();
     renderHead();
+    renderRunfeed();
   }
 
   /* ---------- data flow ---------- */
