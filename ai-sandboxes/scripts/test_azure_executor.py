@@ -168,13 +168,17 @@ async def test_agent_loop_declares_done():
     calls = {"n": 0}
 
     def _msg(tool_name=None, args=None, text=None):
-        m = mock.Mock()
+        # Mirror the real SDK message shape: model_dump(mode="json") returns the
+        # dict the agent appends (preserving fields like thought_signature).
         if tool_name:
-            tc = mock.Mock(); tc.function.name = tool_name
-            tc.function.arguments = __import__("json").dumps(args or {})
-            tc.id = "c1"; m.tool_calls = [tc]; m.content = None
+            payload = {"role": "assistant", "content": None, "tool_calls": [
+                {"id": "c1", "type": "function", "function":
+                 {"name": tool_name, "arguments": __import__("json").dumps(args or {})}}]}
         else:
-            m.tool_calls = None; m.content = text or "working"
+            payload = {"role": "assistant", "content": text or "working",
+                       "tool_calls": None}
+        m = mock.Mock()
+        m.model_dump = lambda mode="json": dict(payload)
         return mock.Mock(choices=[mock.Mock(message=m)])
 
     async def _create(**kw):

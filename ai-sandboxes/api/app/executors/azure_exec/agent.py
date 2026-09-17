@@ -188,20 +188,25 @@ async def run_agent(settings, requirement: str, context: dict,
         resp = await client.chat.completions.create(
             model=use_model, messages=messages, tools=TOOLS,
             tool_choice="auto", temperature=0.2, max_tokens=50000)
-        msg = resp.choices[0].message
+        # Serialize the SDK message, preserving thought_signature (required by
+        # Gemini 3.x reasoning models), but dropping None fields: Gemini rejects
+        # explicit nulls ("Value is not a struct: null"), it wants them omitted.
+        msg = {k: v for k, v in resp.choices[0].message.model_dump(mode="json").items()
+               if v is not None}
         messages.append(msg)
-        if not msg.tool_calls:
+        if not msg.get("tool_calls"):
             # Model produced plain text instead of a tool call: nudge it to act.
-            text = (msg.content or "").strip()
+            text = (msg.get("content") or "").strip()
             emit(f"agent: {text[:120]}")
             log.append(f"[step {step}] note: {text}")
             messages.append({"role": "user", "content":
                              "Continue with tools, or call declare_done if finished."})
             continue
-        for call in msg.tool_calls:
-            name = call.function.name
+        for call in msg["tool_calls"]:
+            fn = call.get("function", {})
+            name = fn.get("name", "")
             try:
-                args = json.loads(call.function.arguments or "{}")
+                args = json.loads(fn.get("arguments") or "{}")
             except ValueError:
                 args = {}
             emit(f"agent tool: {name}")
@@ -212,7 +217,7 @@ async def run_agent(settings, requirement: str, context: dict,
                         "steps": step, "log": "\n".join(log)}
             result = await run_tool(name, args)
             log.append(f"  -> {result[:300]}")
-            messages.append({"role": "tool", "tool_call_id": call.id,
+            messages.append({"role": "tool", "tool_call_id": call.get("id"),
                              "content": _clip(result)})
     return {"done": False, "summary": "step budget exhausted", "artifacts": [],
             "steps": max_steps, "log": "\n".join(log)}

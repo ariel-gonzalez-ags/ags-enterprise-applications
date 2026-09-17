@@ -182,17 +182,22 @@ for step in range(1, MAX_STEPS + 1):
         messages.append({"role": "user", "content": recite()})
     resp = client.chat.completions.create(model=MODEL, messages=messages,
         tools=TOOLS, tool_choice="auto", temperature=0.2, max_tokens=50000)
-    msg = resp.choices[0].message
+    # Serialize the SDK message, preserving thought_signature (required by
+    # Gemini 3.x reasoning models), but dropping None fields: Gemini rejects
+    # explicit nulls ("Value is not a struct: null"), it wants them omitted.
+    msg = {k: v for k, v in resp.choices[0].message.model_dump(mode="json").items()
+           if v is not None}
     messages.append(msg)
-    if not msg.tool_calls:
-        print("agent:", (msg.content or "")[:200], flush=True)
+    if not msg.get("tool_calls"):
+        print("agent:", (msg.get("content") or "")[:200], flush=True)
         messages.append({"role": "user", "content":
             "Continue with tools, or call declare_done if finished."})
         continue
-    for call in msg.tool_calls:
-        name = call.function.name
+    for call in msg["tool_calls"]:
+        fn = call.get("function", {})
+        name = fn.get("name", "")
         try:
-            args = json.loads(call.function.arguments or "{}")
+            args = json.loads(fn.get("arguments") or "{}")
         except ValueError:
             args = {}
         print(f"tool: {name} {json.dumps(args)[:150]}", flush=True)
@@ -208,7 +213,7 @@ for step in range(1, MAX_STEPS + 1):
         else:
             result = "(error) unknown tool: %s" % name
         print(f"  -> {result[:200]}", flush=True)
-        messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
+        messages.append({"role": "tool", "tool_call_id": call["id"], "content": result})
     if done:
         break
 
