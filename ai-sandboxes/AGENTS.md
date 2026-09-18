@@ -153,6 +153,19 @@ the user before implementing**. See "Evolution path".
   rendering balance, an allowance progress bar (spent vs granted), aggregate
   stats, and a per-run history from `/api/embers`. Linked from ConsoleNav; the
   nav `active` state is path-aware (`Astro.url.pathname`).
+  **Kill switch (TODO #7).** A running task can be stopped mid-flight:
+  `POST /api/tasks/{id}/abort` (owner-scoped, 409 unless running) calls
+  `killswitch.request_abort(task_id)`, which flags the run and force-tears-down
+  the live sandbox via the executor's `abort()` (idempotent RG delete). The run
+  loop (`runner._run_real`) polls `killswitch.is_aborted` and breaks; the
+  settlement is `_abort_run`: the Ember burn up to the kill still counts (the
+  sandbox really ran), the task returns to `planned` (not `verified`), and the
+  transcript is kept. Cancellation state lives in `app/killswitch.py`
+  (executor registry + abort flag) so it is shared between the abort endpoint's
+  coroutine and the run loop's. The console shows a red "Stop run" button in the
+  Sandbox stage panel (RunInspector), behind the shared confirm dialog
+  (`askConfirm` sets title + action label per call now that the dialog is shared
+  by delete and stop-run).
 
 ## Directory map
 
@@ -178,6 +191,8 @@ the user before implementing**. See "Evolution path".
 │       ├── models.py     ← Task/Message/Artifact (GUID task ids)
 │       ├── planner.py    ← Gemini via OpenAI-compat endpoint, JSON contract
 │       ├── runner.py     ← run state machine (simulated timer OR real engine)
+│       ├── simfiles.py   ← simulated-run artifact generation helpers
+│       ├── killswitch.py ← abort registry: executor handles + cancel flags (TODO #7)
 │       ├── executors/    ← executor seam: base.py (RunPayload/RunResult contract),
 │       │   │               images.py (template gallery). get_executor() picks the
 │       │   │               backend from EXECUTOR_BACKEND
@@ -316,6 +331,7 @@ that. Marketing pages stay prerendered (static) regardless.
 | `PATCH /api/tasks/{id}` `{formats, provider, model}` | user edits deliverables / target cloud / planner model (drafting/planned only); formats slug+dedupe (min 1), provider and model validated against allowlists |
 | `DELETE /api/tasks/{id}` | 204; drafting/planned only. running/verified/delivered are records: 409 |
 | `POST /api/tasks/{id}/approve` | `planned` → `running`, spawns the simulated run |
+| `POST /api/tasks/{id}/abort` | **kill switch** (running only, else 409): tears the sandbox down now via `killswitch.request_abort`; the run returns to `planned` and the Ember burn up to the kill is still settled |
 | `GET /api/tasks/{id}/artifacts/{filename}` | artifact contents, owner-scoped; `Content-Disposition: attachment`, `no-store` |
 | `GET /api/tasks/{id}/events` | SSE stream; one `{"changed": true}` nudge per state change, owner-scoped |
 

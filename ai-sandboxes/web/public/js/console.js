@@ -102,13 +102,18 @@
   /* ---------- confirm modal (design-system, not window.confirm) ---------- */
 
   var confirmEl = document.querySelector('[data-console="confirm"]');
+  var confirmTitle = document.querySelector('[data-console="confirm-title"]');
   var confirmBody = document.querySelector('[data-console="confirm-body"]');
   var confirmGo = document.querySelector('[data-console="confirm-go"]');
   var confirmCancel = document.querySelector('[data-console="confirm-cancel"]');
   var confirmCb = null;
 
-  function askConfirm(body, onYes) {
+  /* Generic confirm. The dialog is shared, so the title and the action
+   * button's label are set per call (delete vs stop-run read very differently). */
+  function askConfirm(body, onYes, title, goLabel) {
+    confirmTitle.textContent = title || 'Delete task?';
     confirmBody.textContent = body;
+    confirmGo.textContent = goLabel || 'Delete';
     confirmCb = onYes;
     confirmEl.hidden = false;
   }
@@ -524,6 +529,8 @@
   ];
   var stageSection = document.querySelector('[data-console="sandbox-section"]');
   var stageList = document.querySelector('[data-console="stages"]');
+  var stopBtn = document.querySelector('[data-console="stop-run"]');
+  var stopPending = null;  // task_id with an abort POST in flight (instant feedback)
 
   var emberSpent = document.querySelector('[data-console="ember-spent"]');
   var emberDetail = document.querySelector('[data-console="ember-detail"]');
@@ -558,8 +565,20 @@
   function renderStages() {
     if (!stageSection || !stageList) return;
     var running = selected && selected.state === 'running';
-    if (!running) { stageSection.hidden = true; return; }
+    if (!running) {
+      stageSection.hidden = true;
+      if (selected && selected.id === stopPending) stopPending = null;  // kill landed
+      return;
+    }
     stageSection.hidden = false;
+    // The button reflects the SERVER's stopping flag (killswitch.is_aborted),
+    // which clears the moment the run settles; a fresh run after re-approve has
+    // it false, so a stale "Stopping…" is impossible. stopPending gives instant
+    // feedback only until the first server refresh confirms (then it clears).
+    var stopping = !!selected.stopping || selected.id === stopPending;
+    // Once the server has spoken (fresh detail has the real flag), drop the
+    // optimistic local flag so a re-approved run is not held in "Stopping…".
+    if (selected.id === stopPending && selected.stopping) stopPending = null;
     var cur = selected.run_stage || 'provisioning';
     var curIdx = STAGES.findIndex(function (s) { return s[0] === cur; });
     if (curIdx < 0) curIdx = 0;
@@ -567,6 +586,35 @@
       var cls = i < curIdx ? 'done' : (i === curIdx ? 'active' : '');
       return '<li class="stage ' + cls + '"><span class="dot"></span>' + esc(s[1]) + '</li>';
     }).join('');
+    if (stopBtn) {
+      stopBtn.disabled = stopping;
+      stopBtn.classList.toggle('stopping', stopping);
+      stopBtn.innerHTML = stopping
+        ? '<span class="stop-spin"></span> Stopping…'
+        : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="2"/></svg> Stop run';
+    }
+  }
+
+  /* Kill switch (TODO #7): confirm, then POST abort. stopPending gives instant
+   * "Stopping…" feedback; the server's stopping flag (authoritative, clears on
+   * settle) takes over on the next refresh, so a re-approve after a kill shows
+   * a clean "Stop run" on the fresh run. On a failed abort the button re-arms. */
+  if (stopBtn) {
+    stopBtn.addEventListener('click', function () {
+      if (!selected || selected.state !== 'running' || selected.stopping || selected.id === stopPending) return;
+      var id = selected.id;
+      askConfirm('Stop this run and tear down its sandbox now? The Embers used up to this point still count.', function () {
+        stopPending = id;         // instant feedback until the server confirms
+        renderStages();
+        api('/api/tasks/' + encodeURIComponent(id) + '/abort', { method: 'POST' })
+          .then(function () { select(id).then(refreshList); })   // pull the real flag
+          .catch(function () {
+            if (stopPending === id) stopPending = null;  // the kill failed: re-arm
+            renderStages();
+            refreshList();
+          });
+      }, 'Stop run?', 'Stop run');
+    });
   }
 
   function renderInspector() {

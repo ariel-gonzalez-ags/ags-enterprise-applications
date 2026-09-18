@@ -112,6 +112,32 @@ async def main():
         assert r.status_code == 200 and r.json()["state"] == "running"
         print("ok    approve flips to running")
 
+        # 5a. Kill switch (TODO #7): a running task accepts an abort request. Use a
+        # DEDICATED task so the abort flag never leaks into the driven run below.
+        from app import killswitch as _runner
+        from app.models import Task
+        r = await c.post("/api/tasks", json={"title": "killme", "provider": "azure"})
+        kill_tid = r.json()["id"]
+        async with db.session() as s:
+            t = await s.get(Task, kill_tid); t.state = "running"; await s.commit()
+        r = await c.post(f"/api/tasks/{kill_tid}/abort")
+        assert r.status_code == 200 and r.json()["state"] == "aborting", r.text
+        assert _runner.is_aborted(kill_tid), "abort flag not set"
+        _runner.clear(kill_tid)  # leave no residue for other tests
+        print("ok    abort endpoint: running task accepts a kill request")
+
+        # abort is owner-scoped: an unknown/foreign task id gets 404, not 403
+        r = await c.post("/api/tasks/does-not-exist/abort")
+        assert r.status_code == 404, r.text
+        print("ok    abort endpoint: unknown/foreign task -> 404")
+
+        # a non-running task cannot be aborted (409)
+        r = await c.post("/api/tasks", json={"title": "draft", "provider": "azure"})
+        draft_tid = r.json()["id"]
+        r = await c.post(f"/api/tasks/{draft_tid}/abort")
+        assert r.status_code == 409, r.text
+        print("ok    abort endpoint: non-running task -> 409")
+
         # 5b. Ember gate: a user whose balance is drained cannot approve a run.
         from app import embers
         from app.config import load as _load

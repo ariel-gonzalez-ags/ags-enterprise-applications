@@ -17,6 +17,7 @@ from typing import AsyncIterator
 
 from ..base import RunPayload, RunResult
 from . import agent_runner, lifecycle, tags as tagger
+from . import transcript as transcript_log
 from .credentials import clients
 
 # Agent container base. Microsoft Container Registry (MCR), NOT Docker Hub:
@@ -30,7 +31,7 @@ _AGENT_IMAGE = "mcr.microsoft.com/azure-cli:latest"
 # Bumped on each behavior change so a running container can prove which code it
 # has (guards against the stale-image churn we hit while debugging). Surfaced
 # in the first progress line.
-BUILD = "azexec-2026-09-17.6"
+BUILD = "azexec-2026-09-18.2"  # + non-blocking abort teardown + GeneratorExit-safe finally
 
 
 async def _blocking(fn, *args, **kwargs):
@@ -46,9 +47,33 @@ class AzureExecutor:
         self._settings = settings
         self._az = az_clients  # injectable for tests
         self._result = RunResult(ok=False, exit_code=-1, log="", note="not run")
+        self._sb = None        # live sandbox, so abort() can tear it down
+        self.aborted = False
 
     def result(self) -> RunResult:
         return self._result
+
+    def abort(self) -> None:
+        """Kill switch (TODO #7): tear down this run's resource group NOW, from
+        whatever coroutine called it (the abort endpoint), while run() is still
+        polling. Sets a flag run() observes so it stops and reports the kill.
+
+        Teardown is a BLOCKING Azure SDK call, so it must not run inline here:
+        doing so wedges the whole event loop (healthz, SSE, every request) for
+        the seconds an RG delete takes. We offload it to a thread and return
+        immediately; run()'s finally ALSO tears down (idempotent), so a missed
+        or slow teardown here is still caught. Never mask the kill on a failure.
+        """
+        self.aborted = True
+        sb = self._sb
+        if sb is not None:
+            import threading
+            def _bg():
+                try:
+                    lifecycle.teardown(self._clients(), self._settings, sb)
+                except Exception:
+                    pass  # run()'s finally still tears down
+            threading.Thread(target=_bg, daemon=True).start()
 
     def _clients(self):
         if self._az is None:
@@ -72,6 +97,7 @@ class AzureExecutor:
         # full agent log is persisted to the task BEFORE teardown deletes the
         # container (and its logs) with the resource group.
         self.live_log = log
+        self._sb = sb  # live handle so abort() can force-teardown mid-run
         az = await _blocking(self._clients)
         transcript = ""
         try:
@@ -116,6 +142,11 @@ class AzureExecutor:
             # a heartbeat when the agent is quiet so the UI never looks frozen.
             deadline = asyncio.get_event_loop().time() + payload.timeout_seconds
             while asyncio.get_event_loop().time() < deadline:
+                if self.aborted:
+                    emit("Aborted by user: tearing the sandbox down.")
+                    yield log[-1]
+                    state = "Aborted"
+                    break
                 cur = await _blocking(lifecycle.container_runtime_state, az, sb)
                 if cur == "Terminated":
                     code = await _blocking(lifecycle.container_exit_code, az, sb)
@@ -144,9 +175,9 @@ class AzureExecutor:
                 emit(line)
                 yield line
 
-            done = _declared_done(transcript)
-            files = _files_from_log(transcript)
-            summary = _summary_from_log(transcript)
+            done = transcript_log.declared_done(transcript)
+            files = transcript_log.files_from_log(transcript)
+            summary = transcript_log.summary_from_log(transcript)
             # Verification requires the agent to have actually produced every
             # requested deliverable. A declared-done with a missing/empty
             # deliverable is NOT verified: it means the agent built the
@@ -158,12 +189,16 @@ class AzureExecutor:
                 yield log[-1]
                 done = False
             ok = done and state == "Succeeded"
+            if self.aborted:
+                note = "aborted by user"
+            else:
+                note = summary or ("verified" if ok else f"incomplete ({state})")
             self._result = RunResult(
                 ok=ok, exit_code=0 if ok else 1, log="\n".join(log),
                 files=files, idempotent=done,
-                note=summary or ("verified" if ok else f"incomplete ({state})"),
+                note=note,
                 sandbox_seconds=int(time.time()) - sb.created_at,
-                llm_tokens=_usage_tokens(transcript))
+                llm_tokens=transcript_log.usage_tokens(transcript))
         except Exception as exc:  # never leave a run unreported
             # Grab whatever the agent printed before it died, so the failure is
             # diagnosable instead of a bare "error" (the RG delete would
@@ -189,57 +224,35 @@ class AzureExecutor:
             self._result = RunResult(ok=False, exit_code=1, log="\n".join(log),
                                      note=f"error: {type(exc).__name__}",
                                      sandbox_seconds=int(time.time()) - sb.created_at,
-                                     llm_tokens=_usage_tokens(transcript))
+                                     llm_tokens=transcript_log.usage_tokens(transcript))
         finally:
             # Teardown is unconditional: the whole RG goes, whatever happened.
+            # If abort() already tore it down this is a cheap no-op (idempotent).
+            # This block must be GeneratorExit-safe: when the run is closed
+            # early (e.g. superseded by a re-approve), an async generator may
+            # NOT await or yield while handling GeneratorExit, or it dies with
+            # "async generator ignored GeneratorExit" and the teardown is lost.
+            # So: never yield here (report via self._result instead), and never
+            # await when we are being closed. The abort() background thread and
+            # a synchronous teardown both keep the RG from leaking.
             try:
                 proof = await _blocking(lifecycle.teardown, az, self._settings, sb)
-                yield (f"Sandbox {proof['resource_group']} torn down in "
+                msg = (f"Sandbox {proof['resource_group']} torn down in "
                        f"{proof['duration_seconds']}s; cost event recorded.")
-            except Exception as exc:
-                yield f"WARNING: teardown needs attention: {type(exc).__name__}"
-
-
-def _declared_done(text: str) -> bool:
-    """True only on a standalone DONE line. INCOMPLETE (the failure signal)
-    always wins, and 'DONE' must not match inside 'INCOMPLETE'."""
-    lines = [l.strip() for l in text.splitlines()]
-    if "INCOMPLETE" in lines:
-        return False
-    return "DONE" in lines
-
-
-def _usage_tokens(text: str) -> int:
-    """Total LLM tokens the agent reported via its USAGE_TOKENS line. 0 if the
-    agent crashed before printing it (we still bill for compute seconds)."""
-    for line in text.splitlines():
-        line = line.strip()
-        if line.startswith("USAGE_TOKENS:"):
-            try:
-                return int(line.split(":", 1)[1].strip())
-            except ValueError:
-                return 0
-    return 0
-
-
-def _files_from_log(text: str) -> dict[str, str]:
-    out: dict[str, str] = {}
-    current = None
-    buf: list[str] = []
-    for line in text.splitlines():
-        if line.startswith("===AGS-FILE-BEGIN:"):
-            current, buf = line.split(":", 1)[1].strip(), []
-        elif line.startswith("===AGS-FILE-END:"):
-            if current is not None:
-                out[current] = "\n".join(buf) + ("\n" if buf else "")
-            current, buf = None, []
-        elif current is not None:
-            buf.append(line)
-    return out
-
-
-def _summary_from_log(text: str) -> str:
-    for line in text.splitlines():
-        if line.startswith("SUMMARY: "):
-            return line[len("SUMMARY: "):].strip()
-    return ""
+                emit(msg)
+                try:
+                    yield msg
+                except (GeneratorExit, RuntimeError):
+                    pass  # consumer is gone; the line is in the transcript
+            except (GeneratorExit, RuntimeError):
+                # Being closed: cannot await. Tear down synchronously off-thread
+                # so the RG does not leak even when the generator is interrupted.
+                try:
+                    await asyncio.get_event_loop().run_in_executor(
+                        None, lifecycle.teardown, az, self._settings, sb)
+                except Exception:
+                    pass
+            except Exception:
+                emit(f"WARNING: teardown needs attention")
+            finally:
+                self._sb = None  # run is over; drop the abort handle

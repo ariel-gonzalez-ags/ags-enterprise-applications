@@ -7,7 +7,7 @@ from fastapi.responses import PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from .. import db, embers, events, planner, runner
+from .. import db, embers, events, killswitch, planner, runner
 from ..config import Settings
 from ..models import Artifact, Message, Task
 from ._common import require_user, settings_of
@@ -35,6 +35,10 @@ def _task_json(t: Task, detail: bool = False) -> dict:
         "idempotent": t.idempotent,
         "checks": {"passed": t.checks_passed, "total": t.checks_total},
         "run_stage": t.run_stage,
+        # Server-authoritative kill-in-progress flag so the console's Stop button
+        # reflects reality across re-renders and re-approvals (a client-side flag
+        # desyncs: it survives a re-approve and shows "Stopping…" on a fresh run).
+        "stopping": killswitch.is_aborted(t.id) and t.state == "running",
         "agent_pending": t.agent_pending,        "updated": t.updated_at,
     }
     if detail:
@@ -321,6 +325,12 @@ async def approve(task_id: str, request: Request, user: dict = Depends(_user)):
             raise HTTPException(404, "task not found")
         if t.state != "planned":
             raise HTTPException(409, f"cannot approve a task in state {t.state}")
+        # A previous run may still be tearing down (abort races): refuse to
+        # start a new one until the old executor has fully cleared, else two
+        # runs collide on the same task + registry slot.
+        if killswitch.is_live(task_id):
+            raise HTTPException(
+                409, "the previous run is still tearing down; try again in a moment")
         # Ember gate: refuse a run the user cannot pay for. Grants the one-time
         # trial allowance on first approval. Real burn is settled at teardown.
         allowed, bal, est = await embers.can_afford(user["sub"], settings)
@@ -333,3 +343,19 @@ async def approve(task_id: str, request: Request, user: dict = Depends(_user)):
         await s.commit()
     runner.spawn(task_id, settings)
     return {"id": task_id, "state": "running"}
+
+
+@router.post("/tasks/{task_id}/abort")
+async def abort(task_id: str, user: dict = Depends(_user)):
+    """Kill switch (TODO #7): stop a running task and tear its sandbox down now.
+    Owner-scoped; only a running task can be aborted (409 otherwise). The Ember
+    burn up to the kill is still settled by the runner (the sandbox really did
+    run); the point is to stop spend, not refund it."""
+    async with db.session() as s:
+        t = await s.get(Task, task_id)
+        if t is None or t.owner_sub != user["sub"]:
+            raise HTTPException(404, "task not found")
+        if t.state != "running":
+            raise HTTPException(409, f"cannot abort a task in state {t.state}")
+    killswitch.request_abort(task_id)
+    return {"id": task_id, "state": "aborting"}

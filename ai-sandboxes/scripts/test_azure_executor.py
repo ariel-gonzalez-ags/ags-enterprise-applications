@@ -278,9 +278,9 @@ async def test_embers():
     ok, bal, _ = await embers.can_afford("user-a", s)
     assert ok is False and bal == 0
     # usage tokens parsed from a transcript
-    from app.executors.azure_exec import executor
-    assert executor._usage_tokens("line\nUSAGE_TOKENS: 4321\n") == 4321
-    assert executor._usage_tokens("no usage here") == 0
+    from app.executors.azure_exec import transcript
+    assert transcript.usage_tokens("line\nUSAGE_TOKENS: 4321\n") == 4321
+    assert transcript.usage_tokens("no usage here") == 0
     print("ok    embers: rate, trial grant, afford gate, burn, usage parse")
 
 
@@ -361,6 +361,32 @@ async def test_missing_deliverable_is_not_verified():
     print("ok    executor: declared-done with a missing deliverable is rejected, not verified")
 
 
+async def test_executor_abort_tears_down():
+    # Kill switch (TODO #7): a run whose container never finishes is aborted
+    # mid-poll; abort() must force-teardown the RG and the run must report not-ok.
+    from app.executors.azure_exec.executor import AzureExecutor
+    s = _settings(EXECUTOR_BACKEND="azure", GEMINI_API_KEY="k")
+    az = _fake_az(log_text="working...", state="Running")  # never terminates
+    ex = AzureExecutor(s, az_clients=az)
+    payload = RunPayload(run_id="t-kill", image="", commands=[], env={
+        "AGS_TASK": "t-kill", "AGS_REQUIREMENT": "x"}, timeout_seconds=120)
+
+    async def drive():
+        async for _ in ex.run(payload):
+            pass
+
+    run = asyncio.ensure_future(drive())
+    await asyncio.sleep(0.2)   # let it provision + enter the poll loop
+    ex.abort()                 # the abort endpoint's call, from another coroutine
+    await asyncio.wait_for(run, timeout=10)
+    res = ex.result()
+    assert res.ok is False, "aborted run must not verify"
+    assert res.note == "aborted by user", res.note
+    # abort() tears down immediately AND the finally re-tears-down (idempotent):
+    assert az["resource"].resource_groups.deleted, "abort must tear the RG down"
+    print("ok    executor: abort() force-tears-down the sandbox mid-run")
+
+
 async def main():
     test_tags()
     test_provision_scopes_identity_to_rg()
@@ -374,6 +400,7 @@ async def main():
     await test_embers()
     await test_executor_end_to_end_in_container()
     await test_executor_failed_run_returns_not_ok()
+    await test_executor_abort_tears_down()
     print("\nAzure executor: all checks passed (mocked, no spend)")
 
 

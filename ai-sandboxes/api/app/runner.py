@@ -1,10 +1,11 @@
 """Run orchestration. Approving a plan spawns run_task(), which either ticks
 the SIMULATED timer (default) or hands the run to a real executor (when
 EXECUTOR_ENABLED). Progress is posted as agent messages so the thread narrates
-the run. The simulated artifact-generation helpers live in simfiles.py."""
+the run. The simulated artifact-generation helpers live in simfiles.py; the
+kill-switch cancellation state lives in killswitch.py."""
 import asyncio
 
-from . import db, embers, events, simfiles
+from . import db, embers, events, killswitch, simfiles
 from .models import Artifact, Message, Task
 
 _TICK_SECONDS = 3  # dev-friendly tick for the simulated path; real runs are event-driven
@@ -21,10 +22,23 @@ async def run_task(task_id: str, settings=None) -> None:
     if settings is not None and getattr(settings, "real_executor", False):
         await _run_real(task_id, settings)
         return
+    # A fresh (simulated) run must not inherit a stale abort flag from a prior
+    # kill on the same task; clear it so a re-approve after stop runs clean.
+    killswitch.clear(task_id)
+    # Settle: the approve commit can lag a freshly-opened session by a hair
+    # (most visible when tests set _TICK_SECONDS=0). Give the task a few short
+    # beats to appear in `running` before concluding it is gone.
+    task = None
+    for _ in range(20):
+        async with db.session() as s:
+            task = await s.get(Task, task_id)
+            if task is not None and task.state == "running":
+                break
+        await asyncio.sleep(0.05)
+    else:
+        return
     async with db.session() as s:
         task = await s.get(Task, task_id)
-        if task is None or task.state != "running":
-            return
         task.checks_total = max(4, min(12, 4 + len(task.formats) * 2))
         total = task.checks_total
         await _say(s, task_id,
@@ -34,6 +48,17 @@ async def run_task(task_id: str, settings=None) -> None:
 
     for passed in range(1, total + 1):
         await asyncio.sleep(_TICK_SECONDS)
+        if killswitch.is_aborted(task_id):
+            async with db.session() as s:
+                task = await s.get(Task, task_id)
+                if task is not None and task.state == "running":
+                    task.state = "planned"  # killed, back to shapeable
+                    task.checks_passed = 0
+                    await _say(s, task_id, "Run stopped by user. Sandbox torn down.")
+                    await s.commit()
+                    events.publish(task_id)
+            killswitch.clear(task_id)
+            return
         async with db.session() as s:
             task = await s.get(Task, task_id)
             if task is None or task.state != "running":
@@ -75,6 +100,13 @@ async def run_task(task_id: str, settings=None) -> None:
 
 
 def spawn(task_id: str, settings=None) -> None:
+    """Start a run. Refuse to double-start the same task: a re-approve racing
+    the previous run's teardown would otherwise run two executors against one
+    registry slot and one task row (the freeze/corruption we hit on rapid
+    stop-then-approve). The caller (approve) already gates on state, this is a
+    defense-in-depth backstop for the async gap."""
+    if killswitch.is_live(task_id):
+        return
     asyncio.get_running_loop().create_task(run_task(task_id, settings))
 
 
@@ -103,6 +135,12 @@ async def _run_real(task_id: str, settings) -> None:
     reports the outcome achieved (idempotent/converged)."""
     from .executors import get_executor
     from .executors.base import RunPayload
+
+    # A fresh run must not inherit a stale abort flag from a previous kill on
+    # the same task (re-approve after stop). The prior run has fully cleared by
+    # the time we get here (spawn + approve both gate on is_live), so resetting
+    # the flag is safe and required, else the new run would die on entry.
+    killswitch.clear(task_id)
 
     async with db.session() as s:
         task = await s.get(Task, task_id)
@@ -151,9 +189,13 @@ async def _run_real(task_id: str, settings) -> None:
         )
 
     executor = get_executor(settings)
+    killswitch.register(task_id, executor)  # so the abort endpoint can force-teardown it
     try:
         done = 0
         async for line in executor.run(payload):
+            if killswitch.is_aborted(task_id):
+                break  # kill switch: stop consuming output; executor.abort()
+                       # already tore the sandbox down
             done += 1
             stage = _stage_for_line(line)
             async with db.session() as s:
@@ -182,15 +224,47 @@ async def _run_real(task_id: str, settings) -> None:
                                    size=f"{max(1, len(live) // 1024)} KB",
                                    note="full sandbox transcript", content=live))
                     await s.commit()
-        await _finish_run(task_id, files, res, settings)
+        if killswitch.is_aborted(task_id):
+            await _abort_run(task_id, res, settings)
+        else:
+            await _finish_run(task_id, files, res, settings)
     finally:
         # Whatever happened, a finished run must not look stuck on a stage.
+        killswitch.clear(task_id)
         async with db.session() as s:
             task = await s.get(Task, task_id)
             if task is not None and task.run_stage:
                 task.run_stage = ""
                 await s.commit()
                 events.publish(task_id)
+
+
+async def _abort_run(task_id: str, res, settings) -> None:
+    """Settle a user-killed run: burn the Embers consumed up to the kill (the
+    sandbox really did run), keep the transcript, and return the task to
+    `planned` (not verified, not a record). The point of the kill switch is to
+    stop spend, not to refund it."""
+    burn_embers = embers.cost_embers(settings, res.sandbox_seconds, res.llm_tokens)
+    async with db.session() as s:
+        task = await s.get(Task, task_id)
+        if task is None:
+            return
+        new_balance = await embers.burn(task.owner_sub, task_id, burn_embers,
+                                        res.sandbox_seconds, res.llm_tokens,
+                                        model=task.model)
+        task.embers_spent = burn_embers
+        task.sandbox_seconds = res.sandbox_seconds
+        task.llm_tokens = res.llm_tokens
+        task.run_stage = ""
+        task.checks_passed = 0
+        task.state = "planned"  # back to shapeable; an aborted run is no record
+        await _say(s, task_id,
+                   f"Run stopped by you. Sandbox torn down immediately. "
+                   f"Cost to that point: {burn_embers} Embers "
+                   f"({res.sandbox_seconds}s compute, {res.llm_tokens} tokens); "
+                   f"balance {new_balance}.")
+        await s.commit()
+        events.publish(task_id)
 
 
 async def _finish_run(task_id: str, files, res, settings) -> None:
