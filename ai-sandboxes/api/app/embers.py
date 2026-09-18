@@ -48,7 +48,10 @@ async def get_or_create(owner_sub: str, settings) -> EmberAccount:
             await s.commit()
         gate_blocks = (settings.stripe_card_gate and settings.stripe_configured
                        and not acct.card_on_file)
-        if not acct.trial_granted and settings.ember_trial_allowance > 0 and not gate_blocks:
+        # trial_blocked = the card used was already tied to another account's
+        # trial (one trial per card). Withheld permanently, regardless of gate.
+        blocked = gate_blocks or acct.trial_blocked
+        if not acct.trial_granted and settings.ember_trial_allowance > 0 and not blocked:
             acct.trial_granted = True
             acct.balance += settings.ember_trial_allowance
             s.add(EmberLedger(owner_sub=owner_sub,

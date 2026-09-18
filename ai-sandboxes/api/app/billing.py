@@ -26,7 +26,7 @@ import asyncio
 import stripe
 
 from . import db
-from .models import EmberAccount, EmberLedger
+from .models import CardFingerprint, EmberAccount, EmberLedger
 
 
 def _client(settings) -> None:
@@ -126,6 +126,29 @@ def construct_event(payload: bytes, sig_header: str, settings):
                                           settings.stripe_webhook_secret)
 
 
+async def _card_fingerprint_for_setup(session_obj: dict, settings) -> str:
+    """The fingerprint of the card a setup-mode session just stored. Stable per
+    physical card across customers/accounts (that is the whole point: it lets us
+    grant a trial only once per card). Empty string if it cannot be resolved; the
+    caller treats that as 'no card to key on'."""
+    setup_intent_id = session_obj.get("setup_intent")
+    if not setup_intent_id:
+        return ""
+
+    def _lookup():
+        _client(settings)
+        si = stripe.SetupIntent.retrieve(setup_intent_id)
+        pm_id = si.get("payment_method")
+        if not pm_id:
+            return ""
+        pm = stripe.PaymentMethod.retrieve(pm_id)
+        return (pm.get("card") or {}).get("fingerprint", "")
+    try:
+        return await asyncio.to_thread(_lookup)
+    except Exception:
+        return ""  # cannot resolve the card; fall through to gating on account only
+
+
 async def apply_checkout_completed(session_obj: dict, settings) -> bool:
     """Credit the result of a completed Checkout Session. Two kinds:
     - payment (top-up): grant the purchased Embers.
@@ -150,7 +173,24 @@ async def apply_checkout_completed(session_obj: dict, settings) -> bool:
             return True
         if mode == "setup":
             acct.card_on_file = True
-            if not acct.trial_granted and settings.ember_trial_allowance > 0:
+            # One trial per CARD, not per account. The card's fingerprint is
+            # stable across customers/accounts, so a card that already unlocked
+            # a trial (on any account) does not grant another. The card still
+            # works for paid top-ups; only the free trial is fingerprint-gated.
+            fingerprint = await _card_fingerprint_for_setup(session_obj, settings)
+            card_seen_before = False
+            if fingerprint:
+                existing = await s.get(CardFingerprint, fingerprint)
+                card_seen_before = existing is not None
+                if not card_seen_before:
+                    s.add(CardFingerprint(fingerprint=fingerprint,
+                                          first_owner_sub=owner_sub))
+            if card_seen_before:
+                # Record WHY no trial was granted, so get_or_create (the other
+                # grant path) does not hand it out the moment card_on_file flips.
+                acct.trial_blocked = True
+            if (not acct.trial_granted and settings.ember_trial_allowance > 0
+                    and not card_seen_before):
                 acct.trial_granted = True
                 acct.balance += settings.ember_trial_allowance
                 s.add(EmberLedger(owner_sub=owner_sub,

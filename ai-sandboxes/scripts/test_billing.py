@@ -116,6 +116,54 @@ async def test_gate_off_grants_immediately():
     print("ok    S3: gate off -> trial grants immediately (legacy behavior)")
 
 
+def _mock_fingerprint(fp):
+    """Stub the Stripe lookup chain so a setup session resolves to a card
+    fingerprint without a real Stripe call."""
+    return mock.patch.object(billing, "_card_fingerprint_for_setup",
+                             new=mock.AsyncMock(return_value=fp))
+
+
+async def test_one_trial_per_card():
+    # Two DIFFERENT accounts add the SAME card (same fingerprint). The first
+    # unlocks a trial; the second must NOT (the anti-multi-account control).
+    s = _settings(STRIPE_CARD_GATE="1", EMBER_TRIAL_ALLOWANCE="300")
+    await embers.get_or_create("alice", s)
+    await embers.get_or_create("bob", s)
+    with _mock_fingerprint("fp_card_X"):
+        await billing.apply_checkout_completed(
+            {"mode": "setup", "metadata": {"ags_owner_sub": "alice"}}, s)
+    a = await embers.get_or_create("alice", s)
+    assert a.trial_granted and a.balance == 300, "first use of the card grants"
+    # Bob reuses the same physical card: card_on_file flips, but NO trial.
+    with _mock_fingerprint("fp_card_X"):
+        await billing.apply_checkout_completed(
+            {"mode": "setup", "metadata": {"ags_owner_sub": "bob"}}, s)
+    b = await embers.get_or_create("bob", s)
+    assert b.card_on_file is True, "the card still works (for paid top-up)"
+    assert not b.trial_granted and b.balance == 0, \
+        "a card that already unlocked a trial must not grant another"
+    print("ok    S3: one trial per card; a reused card grants no second trial")
+
+
+async def test_different_cards_each_get_trial():
+    # Two accounts with DIFFERENT cards each get their own trial (the gate only
+    # blocks reuse of the same card, not separate people).
+    s = _settings(STRIPE_CARD_GATE="1", EMBER_TRIAL_ALLOWANCE="300")
+    await embers.get_or_create("carol", s)
+    await embers.get_or_create("dan", s)
+    with _mock_fingerprint("fp_carol_card"):
+        await billing.apply_checkout_completed(
+            {"mode": "setup", "metadata": {"ags_owner_sub": "carol"}}, s)
+    with _mock_fingerprint("fp_dan_card"):
+        await billing.apply_checkout_completed(
+            {"mode": "setup", "metadata": {"ags_owner_sub": "dan"}}, s)
+    c = await embers.get_or_create("carol", s)
+    d = await embers.get_or_create("dan", s)
+    assert c.trial_granted and d.trial_granted, "distinct cards each unlock a trial"
+    print("ok    S3: distinct cards each unlock their own trial")
+
+
+
 async def main():
     await test_customer_cached()
     await test_topup_checkout_metadata()
@@ -123,6 +171,8 @@ async def main():
     await test_webhook_credits_topup()
     await test_card_gate_blocks_then_grants_trial()
     await test_gate_off_grants_immediately()
+    await test_one_trial_per_card()
+    await test_different_cards_each_get_trial()
     print("\nBilling (Stripe, mocked): all checks passed")
 
 

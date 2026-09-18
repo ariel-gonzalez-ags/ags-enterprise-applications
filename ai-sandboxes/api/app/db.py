@@ -63,6 +63,10 @@ async def create_schema() -> None:
                 await conn.execute(
                     text("ALTER TABLE ember_accounts ADD COLUMN card_on_file BOOLEAN NOT NULL DEFAULT 0")
                 )
+            if "trial_blocked" not in acols:
+                await conn.execute(
+                    text("ALTER TABLE ember_accounts ADD COLUMN trial_blocked BOOLEAN NOT NULL DEFAULT 0")
+                )
 
 
 def session() -> AsyncSession:
