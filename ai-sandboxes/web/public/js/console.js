@@ -102,13 +102,18 @@
   /* ---------- confirm modal (design-system, not window.confirm) ---------- */
 
   var confirmEl = document.querySelector('[data-console="confirm"]');
+  var confirmTitle = document.querySelector('[data-console="confirm-title"]');
   var confirmBody = document.querySelector('[data-console="confirm-body"]');
   var confirmGo = document.querySelector('[data-console="confirm-go"]');
   var confirmCancel = document.querySelector('[data-console="confirm-cancel"]');
   var confirmCb = null;
 
-  function askConfirm(body, onYes) {
+  /* Generic confirm. The dialog is shared, so the title and the action
+   * button's label are set per call (delete vs stop-run read very differently). */
+  function askConfirm(body, onYes, title, goLabel) {
+    confirmTitle.textContent = title || 'Delete task?';
     confirmBody.textContent = body;
+    confirmGo.textContent = goLabel || 'Delete';
     confirmCb = onYes;
     confirmEl.hidden = false;
   }
@@ -524,6 +529,7 @@
   ];
   var stageSection = document.querySelector('[data-console="sandbox-section"]');
   var stageList = document.querySelector('[data-console="stages"]');
+  var stopBtn = document.querySelector('[data-console="stop-run"]');
 
   var emberSpent = document.querySelector('[data-console="ember-spent"]');
   var emberDetail = document.querySelector('[data-console="ember-detail"]');
@@ -567,6 +573,20 @@
       var cls = i < curIdx ? 'done' : (i === curIdx ? 'active' : '');
       return '<li class="stage ' + cls + '"><span class="dot"></span>' + esc(s[1]) + '</li>';
     }).join('');
+  }
+
+  /* Kill switch (TODO #7): confirm, then POST abort. The server tears the
+   * sandbox down and settles the Ember burn; the task returns to planned. We
+   * re-fetch on the next SSE nudge, so no optimistic state change here. */
+  if (stopBtn) {
+    stopBtn.addEventListener('click', function () {
+      if (!selected || selected.state !== 'running') return;
+      askConfirm('Stop this run and tear down its sandbox now? The Embers used up to this point still count.', function () {
+        api('/api/tasks/' + encodeURIComponent(selected.id) + '/abort', { method: 'POST' })
+          .then(function () { refreshList(); })
+          .catch(function () { refreshList(); });
+      }, 'Stop run?', 'Stop run');
+    });
   }
 
   function renderInspector() {

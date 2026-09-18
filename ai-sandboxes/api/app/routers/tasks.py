@@ -7,7 +7,7 @@ from fastapi.responses import PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from .. import db, embers, events, planner, runner
+from .. import db, embers, events, killswitch, planner, runner
 from ..config import Settings
 from ..models import Artifact, Message, Task
 from ._common import require_user, settings_of
@@ -333,3 +333,19 @@ async def approve(task_id: str, request: Request, user: dict = Depends(_user)):
         await s.commit()
     runner.spawn(task_id, settings)
     return {"id": task_id, "state": "running"}
+
+
+@router.post("/tasks/{task_id}/abort")
+async def abort(task_id: str, user: dict = Depends(_user)):
+    """Kill switch (TODO #7): stop a running task and tear its sandbox down now.
+    Owner-scoped; only a running task can be aborted (409 otherwise). The Ember
+    burn up to the kill is still settled by the runner (the sandbox really did
+    run); the point is to stop spend, not refund it."""
+    async with db.session() as s:
+        t = await s.get(Task, task_id)
+        if t is None or t.owner_sub != user["sub"]:
+            raise HTTPException(404, "task not found")
+        if t.state != "running":
+            raise HTTPException(409, f"cannot abort a task in state {t.state}")
+    killswitch.request_abort(task_id)
+    return {"id": task_id, "state": "aborting"}

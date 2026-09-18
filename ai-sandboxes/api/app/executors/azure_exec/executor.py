@@ -30,7 +30,7 @@ _AGENT_IMAGE = "mcr.microsoft.com/azure-cli:latest"
 # Bumped on each behavior change so a running container can prove which code it
 # has (guards against the stale-image churn we hit while debugging). Surfaced
 # in the first progress line.
-BUILD = "azexec-2026-09-17.6"
+BUILD = "azexec-2026-09-18.1"  # + kill switch (abort() force-teardown)
 
 
 async def _blocking(fn, *args, **kwargs):
@@ -46,9 +46,24 @@ class AzureExecutor:
         self._settings = settings
         self._az = az_clients  # injectable for tests
         self._result = RunResult(ok=False, exit_code=-1, log="", note="not run")
+        self._sb = None        # live sandbox, so abort() can tear it down
+        self.aborted = False
 
     def result(self) -> RunResult:
         return self._result
+
+    def abort(self) -> None:
+        """Kill switch (TODO #7): tear down this run's resource group NOW, from
+        whatever coroutine called it (the abort endpoint), while run() is still
+        polling. Sets a flag run() observes so it stops and reports the kill.
+        Teardown is idempotent; a failure here is surfaced, not fatal, because
+        run()'s finally also attempts teardown."""
+        self.aborted = True
+        if self._sb is not None:
+            try:
+                lifecycle.teardown(self._clients(), self._settings, self._sb)
+            except Exception:
+                pass  # run()'s finally still tears down; don't mask the kill
 
     def _clients(self):
         if self._az is None:
@@ -72,6 +87,7 @@ class AzureExecutor:
         # full agent log is persisted to the task BEFORE teardown deletes the
         # container (and its logs) with the resource group.
         self.live_log = log
+        self._sb = sb  # live handle so abort() can force-teardown mid-run
         az = await _blocking(self._clients)
         transcript = ""
         try:
@@ -116,6 +132,11 @@ class AzureExecutor:
             # a heartbeat when the agent is quiet so the UI never looks frozen.
             deadline = asyncio.get_event_loop().time() + payload.timeout_seconds
             while asyncio.get_event_loop().time() < deadline:
+                if self.aborted:
+                    emit("Aborted by user: tearing the sandbox down.")
+                    yield log[-1]
+                    state = "Aborted"
+                    break
                 cur = await _blocking(lifecycle.container_runtime_state, az, sb)
                 if cur == "Terminated":
                     code = await _blocking(lifecycle.container_exit_code, az, sb)
@@ -158,10 +179,14 @@ class AzureExecutor:
                 yield log[-1]
                 done = False
             ok = done and state == "Succeeded"
+            if self.aborted:
+                note = "aborted by user"
+            else:
+                note = summary or ("verified" if ok else f"incomplete ({state})")
             self._result = RunResult(
                 ok=ok, exit_code=0 if ok else 1, log="\n".join(log),
                 files=files, idempotent=done,
-                note=summary or ("verified" if ok else f"incomplete ({state})"),
+                note=note,
                 sandbox_seconds=int(time.time()) - sb.created_at,
                 llm_tokens=_usage_tokens(transcript))
         except Exception as exc:  # never leave a run unreported
@@ -192,12 +217,15 @@ class AzureExecutor:
                                      llm_tokens=_usage_tokens(transcript))
         finally:
             # Teardown is unconditional: the whole RG goes, whatever happened.
+            # If abort() already tore it down this is a cheap no-op (idempotent).
             try:
                 proof = await _blocking(lifecycle.teardown, az, self._settings, sb)
                 yield (f"Sandbox {proof['resource_group']} torn down in "
                        f"{proof['duration_seconds']}s; cost event recorded.")
             except Exception as exc:
                 yield f"WARNING: teardown needs attention: {type(exc).__name__}"
+            finally:
+                self._sb = None  # run is over; drop the abort handle
 
 
 def _declared_done(text: str) -> bool:

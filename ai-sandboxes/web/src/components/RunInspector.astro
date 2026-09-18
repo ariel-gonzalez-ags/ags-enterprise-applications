@@ -8,6 +8,10 @@ import Icon from './Icon.astro';
   <section data-console="sandbox-section" hidden>
     <h3><Icon name="layers" size={14} /> Sandbox</h3>
     <ol class="stages" data-console="stages"></ol>
+    <button class="stop-run" data-console="stop-run" type="button">
+      <Icon name="stop" size={12} /> Stop run
+    </button>
+    <p class="stop-hint">Tears the sandbox down now. Embers used so far still count.</p>
   </section>
 
   <section>
@@ -100,6 +104,12 @@ import Icon from './Icon.astro';
   .stages :global(.stage.active) { color: var(--text) }
   .stages :global(.stage.active .dot) { background: var(--accent); box-shadow: 0 0 0 4px rgba(240,86,35,.15); animation: stagepulse 1.4s ease-in-out infinite }
   @keyframes stagepulse { 50% { box-shadow: 0 0 0 7px rgba(240,86,35,0) } }
+
+  /* Kill switch (TODO #7): destructive, so --red; sits under the stage list */
+  .stop-run { display: inline-flex; align-items: center; gap: 7px; margin-top: 12px; padding: 7px 12px; background: none; border: 1px solid var(--line2); border-radius: 8px; color: var(--red); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; transition: border-color .15s, background .15s }
+  .stop-run:hover { border-color: var(--red); background: rgba(229,72,77,.08) }
+  .stop-run:disabled { opacity: .5; cursor: default }
+  .stop-hint { margin: 7px 0 0; font-size: 11px; color: var(--muted2) }
 
   .ember-row { display: flex; align-items: baseline; gap: 8px }
   .ember-val { font-size: 22px; color: var(--accent); font-weight: 600 }
