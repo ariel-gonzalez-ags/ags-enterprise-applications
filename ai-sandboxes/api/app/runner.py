@@ -22,10 +22,20 @@ async def run_task(task_id: str, settings=None) -> None:
     if settings is not None and getattr(settings, "real_executor", False):
         await _run_real(task_id, settings)
         return
+    # Settle: the approve commit can lag a freshly-opened session by a hair
+    # (most visible when tests set _TICK_SECONDS=0). Give the task a few short
+    # beats to appear in `running` before concluding it is gone.
+    task = None
+    for _ in range(20):
+        async with db.session() as s:
+            task = await s.get(Task, task_id)
+            if task is not None and task.state == "running":
+                break
+        await asyncio.sleep(0.05)
+    else:
+        return
     async with db.session() as s:
         task = await s.get(Task, task_id)
-        if task is None or task.state != "running":
-            return
         task.checks_total = max(4, min(12, 4 + len(task.formats) * 2))
         total = task.checks_total
         await _say(s, task_id,
