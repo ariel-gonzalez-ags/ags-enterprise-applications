@@ -16,7 +16,7 @@ from __future__ import annotations
 # The actual in-container program. Written as a string so the executor can
 # base64 it into the ACI `command` without a custom image build. Kept terse.
 SCRIPT = r'''
-import json, os, subprocess, sys, base64
+import json, os, subprocess, sys, base64, urllib.request, re
 from openai import OpenAI
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
@@ -29,12 +29,39 @@ TAGS = os.environ.get("AGS_TAGS", "")
 OUTPUTS = [f for f in os.environ.get("AGS_OUTPUTS", "").split(",") if f]
 MAX_STEPS = int(os.environ.get("AGS_MAX_STEPS", "40"))
 
+# Context budget: compact when estimated tokens cross this. flash models have a
+# large window; ~90k keeps us clear of the hard cap with room for a big tool
+# result plus the compaction summary itself. Tunable via env, model-aware default.
+CTX_BUDGET = int(os.environ.get("AGS_CTX_BUDGET", "90000"))
+KEEP_RECENT_TOOLS = 3    # tool results kept verbatim; older ones pruned
+TOOL_CAP = 1800          # chars kept per tool result in context
+RECITE_EVERY = 6         # re-inject goal+checklist at the tail this often
+
+def est_tokens(msgs):
+    # cheap heuristic: ~4 chars per token over the payload
+    return sum(len(str(m.get("content", ""))) +
+               len(json.dumps(m.get("tool_calls") or [])) for m in msgs) // 4
+
+def clip(text):
+    # Head+tail truncation with spill-to-disk: keep the pointer, not the bulk.
+    if len(text) <= TOOL_CAP:
+        return text
+    try:
+        sp = "/tmp/spill_%d.txt" % (abs(hash(text)) % 99999)
+        with open(sp, "w") as fh:
+            fh.write(text)
+        half = TOOL_CAP // 2
+        return (text[:half] + "\n...[%d chars truncated; full output in %s: "
+                "grep/sed it, do not re-run]...\n" % (len(text), sp) + text[-half:])
+    except OSError:
+        return text[:TOOL_CAP]
+
 def run_shell(command):
     try:
         p = subprocess.run(command, shell=True, capture_output=True,
                            text=True, timeout=600)
         out = (p.stdout + p.stderr).strip()
-        return f"(exit {p.returncode}) {out}"[:4000] or f"(exit {p.returncode})"
+        return clip(f"(exit {p.returncode}) {out}" or f"(exit {p.returncode})")
     except Exception as e:
         return f"(error) {type(e).__name__}: {e}"
 
@@ -46,6 +73,62 @@ def write_file(path, content):
     except Exception as e:
         return f"(error) {type(e).__name__}: {e}"
 
+def fetch_docs(url):
+    # Pull a doc page and return a trimmed excerpt, so the agent consults
+    # current official docs instead of guessing from training data.
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "ags-agent"})
+        html = urllib.request.urlopen(req, timeout=30).read().decode("utf-8", "ignore")
+        html = re.sub(r"(?is)<(script|style|nav|header|footer)[^>]*>.*?</\1>", " ", html)
+        text = re.sub(r"(?s)<[^>]+>", " ", html)
+        return clip(re.sub(r"\s+", " ", text).strip())
+    except Exception as e:
+        return f"(error) {type(e).__name__}: {e}"
+
+def prune_tools(msgs):
+    # Replace all but the last KEEP_RECENT_TOOLS tool results with a stub. The
+    # full text stays in the on-disk transcript (printed above); context keeps
+    # only the pointer. Keeps tool call + result paired, oldest first.
+    seen = 0
+    for i in range(len(msgs) - 1, -1, -1):
+        if msgs[i].get("role") == "tool":
+            seen += 1
+            if seen > KEEP_RECENT_TOOLS and not str(msgs[i].get("content", "")).startswith("[cleared"):
+                msgs[i] = dict(msgs[i], content="[cleared: tool output already processed]")
+    return msgs
+
+def compact(msgs):
+    # Summarize the older head, keep system + task + a verbatim recent tail.
+    # Guard against thrash: only compact when it actually shrinks things.
+    if len(msgs) < 8:
+        return msgs
+    head, tail = msgs[2:-4], msgs[-4:]
+    if not head:
+        return msgs
+    serial = "\n".join(
+        "[%s] %s" % (m.get("role", "?"), str(m.get("content", ""))[:600])
+        for m in head)
+    try:
+        r = client.chat.completions.create(model=MODEL, temperature=0.0, max_tokens=1500,
+            messages=[{"role": "system", "content":
+                "Compress this sandbox-agent working history into a tight factual brief "
+                "for the SAME agent to continue. Keep: resources created (names, ids), "
+                "commands that worked, errors and their fixes, files written, what is "
+                "left to do, the exact deliverables still owed. Drop raw command output. "
+                "Plain prose, under 250 words."},
+                {"role": "user", "content": serial}])
+        brief = r.choices[0].message.content
+    except Exception as e:
+        print("compaction failed: %s" % type(e).__name__, flush=True)
+        return msgs
+    return msgs[:2] + [{"role": "user", "content":
+        "[compacted history]\n" + brief}] + tail
+
+def recite():
+    # Restate goal + checklist to fight lost-in-the-middle drift on long runs.
+    return ("[recap] Goal: %s\nResource group: %s\nDeliverables still required "
+            "(write each once, then declare_done): %s" % (REQUIREMENT, RG, ", ".join(OUTPUTS)))
+
 TOOLS = [
     {"type": "function", "function": {"name": "run_shell", "description":
         "Run a shell command (az CLI etc) in the sandbox. Scoped to the sandbox "
@@ -56,6 +139,12 @@ TOOLS = [
         "Write a file into the sandbox workspace.",
         "parameters": {"type": "object", "properties": {"path": {"type": "string"},
                        "content": {"type": "string"}}, "required": ["path", "content"]}}},
+    {"type": "function", "function": {"name": "fetch_docs", "description":
+        "Fetch an official documentation page (Azure MS Learn, terraform "
+        "registry, REST specs) and return a trimmed text excerpt. Use it to "
+        "confirm current resource/provider arguments instead of guessing.",
+        "parameters": {"type": "object", "properties": {"url": {"type": "string"}},
+                       "required": ["url"]}}},
     {"type": "function", "function": {"name": "declare_done", "description":
         "Declare the outcome achieved and verified.",
         "parameters": {"type": "object", "properties": {"summary": {"type": "string"}},
@@ -83,29 +172,48 @@ messages = [{"role": "system", "content": SYSTEM},
 
 done, summary = False, ""
 for step in range(1, MAX_STEPS + 1):
+    # Keep context lean before each call: prune old tool outputs, compact the
+    # history if we are nearing the budget, and periodically restate the goal.
+    prune_tools(messages)
+    if est_tokens(messages) > CTX_BUDGET:
+        print("[context] compacting at ~%d tokens" % est_tokens(messages), flush=True)
+        messages = compact(messages)
+    if step > 1 and step % RECITE_EVERY == 0:
+        messages.append({"role": "user", "content": recite()})
     resp = client.chat.completions.create(model=MODEL, messages=messages,
         tools=TOOLS, tool_choice="auto", temperature=0.2, max_tokens=50000)
-    msg = resp.choices[0].message
+    # Serialize the SDK message, preserving thought_signature (required by
+    # Gemini 3.x reasoning models), but dropping None fields: Gemini rejects
+    # explicit nulls ("Value is not a struct: null"), it wants them omitted.
+    msg = {k: v for k, v in resp.choices[0].message.model_dump(mode="json").items()
+           if v is not None}
     messages.append(msg)
-    if not msg.tool_calls:
-        print("agent:", (msg.content or "")[:200], flush=True)
+    if not msg.get("tool_calls"):
+        print("agent:", (msg.get("content") or "")[:200], flush=True)
         messages.append({"role": "user", "content":
             "Continue with tools, or call declare_done if finished."})
         continue
-    for call in msg.tool_calls:
-        name = call.function.name
+    for call in msg["tool_calls"]:
+        fn = call.get("function", {})
+        name = fn.get("name", "")
         try:
-            args = json.loads(call.function.arguments or "{}")
+            args = json.loads(fn.get("arguments") or "{}")
         except ValueError:
             args = {}
         print(f"tool: {name} {json.dumps(args)[:150]}", flush=True)
         if name == "declare_done":
             done, summary = True, args.get("summary", "")
             break
-        result = (run_shell(args.get("command", "")) if name == "run_shell"
-                  else write_file(args.get("path", ""), args.get("content", "")))
+        if name == "run_shell":
+            result = run_shell(args.get("command", ""))
+        elif name == "write_file":
+            result = write_file(args.get("path", ""), args.get("content", ""))
+        elif name == "fetch_docs":
+            result = fetch_docs(args.get("url", ""))
+        else:
+            result = "(error) unknown tool: %s" % name
         print(f"  -> {result[:200]}", flush=True)
-        messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
+        messages.append({"role": "tool", "tool_call_id": call["id"], "content": result})
     if done:
         break
 
