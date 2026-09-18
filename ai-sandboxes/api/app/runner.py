@@ -7,7 +7,7 @@ import asyncio
 from . import db, embers, events, simfiles
 from .models import Artifact, Message, Task
 
-_TICK_SECONDS = simfiles._TICK_SECONDS
+_TICK_SECONDS = 3  # dev-friendly tick for the simulated path; real runs are event-driven
 
 
 async def _say(s, task_id: str, text: str) -> None:

@@ -4,8 +4,6 @@ them with actual outputs. Split from runner.py so the orchestration stays lean.
 """
 from .models import Task
 
-_TICK_SECONDS = 3  # dev-friendly; real runs are event-driven
-
 # Known formats get realistic filenames; the runner must produce a file for
 # EVERY accepted format, so unknown/custom ones fall back to a generic name.
 FORMAT_FILES = {
