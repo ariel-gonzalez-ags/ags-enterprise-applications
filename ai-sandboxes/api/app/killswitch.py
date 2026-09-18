@@ -15,6 +15,13 @@ def register(task_id: str, executor: object) -> None:
     _LIVE[task_id] = executor
 
 
+def is_live(task_id: str) -> bool:
+    """True while a real run for this task is still in flight (registered and
+    not yet cleared). The runner uses this to refuse a second concurrent run on
+    the same task (a re-approve racing the previous run's teardown)."""
+    return task_id in _LIVE
+
+
 def request_abort(task_id: str) -> bool:
     """Mark a run for cancellation and force-teardown its sandbox. Returns True
     if a live executor was aborted, False otherwise (the simulated path has no

@@ -97,6 +97,13 @@ async def run_task(task_id: str, settings=None) -> None:
 
 
 def spawn(task_id: str, settings=None) -> None:
+    """Start a run. Refuse to double-start the same task: a re-approve racing
+    the previous run's teardown would otherwise run two executors against one
+    registry slot and one task row (the freeze/corruption we hit on rapid
+    stop-then-approve). The caller (approve) already gates on state, this is a
+    defense-in-depth backstop for the async gap."""
+    if killswitch.is_live(task_id):
+        return
     asyncio.get_running_loop().create_task(run_task(task_id, settings))
 
 

@@ -321,6 +321,12 @@ async def approve(task_id: str, request: Request, user: dict = Depends(_user)):
             raise HTTPException(404, "task not found")
         if t.state != "planned":
             raise HTTPException(409, f"cannot approve a task in state {t.state}")
+        # A previous run may still be tearing down (abort races): refuse to
+        # start a new one until the old executor has fully cleared, else two
+        # runs collide on the same task + registry slot.
+        if killswitch.is_live(task_id):
+            raise HTTPException(
+                409, "the previous run is still tearing down; try again in a moment")
         # Ember gate: refuse a run the user cannot pay for. Grants the one-time
         # trial allowance on first approval. Real burn is settled at teardown.
         allowed, bal, est = await embers.can_afford(user["sub"], settings)

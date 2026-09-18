@@ -30,7 +30,7 @@ _AGENT_IMAGE = "mcr.microsoft.com/azure-cli:latest"
 # Bumped on each behavior change so a running container can prove which code it
 # has (guards against the stale-image churn we hit while debugging). Surfaced
 # in the first progress line.
-BUILD = "azexec-2026-09-18.1"  # + kill switch (abort() force-teardown)
+BUILD = "azexec-2026-09-18.2"  # + non-blocking abort teardown + GeneratorExit-safe finally
 
 
 async def _blocking(fn, *args, **kwargs):
@@ -56,14 +56,23 @@ class AzureExecutor:
         """Kill switch (TODO #7): tear down this run's resource group NOW, from
         whatever coroutine called it (the abort endpoint), while run() is still
         polling. Sets a flag run() observes so it stops and reports the kill.
-        Teardown is idempotent; a failure here is surfaced, not fatal, because
-        run()'s finally also attempts teardown."""
+
+        Teardown is a BLOCKING Azure SDK call, so it must not run inline here:
+        doing so wedges the whole event loop (healthz, SSE, every request) for
+        the seconds an RG delete takes. We offload it to a thread and return
+        immediately; run()'s finally ALSO tears down (idempotent), so a missed
+        or slow teardown here is still caught. Never mask the kill on a failure.
+        """
         self.aborted = True
-        if self._sb is not None:
-            try:
-                lifecycle.teardown(self._clients(), self._settings, self._sb)
-            except Exception:
-                pass  # run()'s finally still tears down; don't mask the kill
+        sb = self._sb
+        if sb is not None:
+            import threading
+            def _bg():
+                try:
+                    lifecycle.teardown(self._clients(), self._settings, sb)
+                except Exception:
+                    pass  # run()'s finally still tears down
+            threading.Thread(target=_bg, daemon=True).start()
 
     def _clients(self):
         if self._az is None:
@@ -218,12 +227,32 @@ class AzureExecutor:
         finally:
             # Teardown is unconditional: the whole RG goes, whatever happened.
             # If abort() already tore it down this is a cheap no-op (idempotent).
+            # This block must be GeneratorExit-safe: when the run is closed
+            # early (e.g. superseded by a re-approve), an async generator may
+            # NOT await or yield while handling GeneratorExit, or it dies with
+            # "async generator ignored GeneratorExit" and the teardown is lost.
+            # So: never yield here (report via self._result instead), and never
+            # await when we are being closed. The abort() background thread and
+            # a synchronous teardown both keep the RG from leaking.
             try:
                 proof = await _blocking(lifecycle.teardown, az, self._settings, sb)
-                yield (f"Sandbox {proof['resource_group']} torn down in "
+                msg = (f"Sandbox {proof['resource_group']} torn down in "
                        f"{proof['duration_seconds']}s; cost event recorded.")
-            except Exception as exc:
-                yield f"WARNING: teardown needs attention: {type(exc).__name__}"
+                emit(msg)
+                try:
+                    yield msg
+                except (GeneratorExit, RuntimeError):
+                    pass  # consumer is gone; the line is in the transcript
+            except (GeneratorExit, RuntimeError):
+                # Being closed: cannot await. Tear down synchronously off-thread
+                # so the RG does not leak even when the generator is interrupted.
+                try:
+                    await asyncio.get_event_loop().run_in_executor(
+                        None, lifecycle.teardown, az, self._settings, sb)
+                except Exception:
+                    pass
+            except Exception:
+                emit(f"WARNING: teardown needs attention")
             finally:
                 self._sb = None  # run is over; drop the abort handle
 
