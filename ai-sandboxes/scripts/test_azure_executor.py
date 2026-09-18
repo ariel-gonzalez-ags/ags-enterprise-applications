@@ -262,8 +262,8 @@ async def test_embers():
     s = load()
     # rating: blended seconds + tokens, rounds up, floor of 0
     assert embers.cost_embers(s, 0, 0) == 0
-    # 4 min * 2/min = 8, plus 4000/1000 * 5 = 20 -> 28
-    assert embers.cost_embers(s, 240, 4000) == 28
+    # 4 min * 3/min = 12, plus 4000/1000 * 2 = 8 -> 20
+    assert embers.cost_embers(s, 240, 4000) == 20
     # trial grant: first sight creates the account with the allowance
     bal = await embers.balance("user-a", s)
     assert bal == s.ember_trial_allowance

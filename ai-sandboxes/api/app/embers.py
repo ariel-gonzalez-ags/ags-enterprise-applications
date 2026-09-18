@@ -36,7 +36,7 @@ def estimate_run_cost(settings, est_minutes: int = 4, est_tokens: int = 4000) ->
 
 async def get_or_create(owner_sub: str, settings) -> EmberAccount:
     """Load the user's account, creating it (and granting the one-time trial
-    allowance) on first sight. Trial is what gates new users to ~3 runs."""
+    allowance) on first sight. The trial gates new users to a handful of runs."""
     async with db.session() as s:
         acct = await s.get(EmberAccount, owner_sub)
         if acct is None:
