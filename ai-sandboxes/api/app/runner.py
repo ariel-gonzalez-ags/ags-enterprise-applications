@@ -22,6 +22,9 @@ async def run_task(task_id: str, settings=None) -> None:
     if settings is not None and getattr(settings, "real_executor", False):
         await _run_real(task_id, settings)
         return
+    # A fresh (simulated) run must not inherit a stale abort flag from a prior
+    # kill on the same task; clear it so a re-approve after stop runs clean.
+    killswitch.clear(task_id)
     # Settle: the approve commit can lag a freshly-opened session by a hair
     # (most visible when tests set _TICK_SECONDS=0). Give the task a few short
     # beats to appear in `running` before concluding it is gone.
@@ -132,6 +135,12 @@ async def _run_real(task_id: str, settings) -> None:
     reports the outcome achieved (idempotent/converged)."""
     from .executors import get_executor
     from .executors.base import RunPayload
+
+    # A fresh run must not inherit a stale abort flag from a previous kill on
+    # the same task (re-approve after stop). The prior run has fully cleared by
+    # the time we get here (spawn + approve both gate on is_live), so resetting
+    # the flag is safe and required, else the new run would die on entry.
+    killswitch.clear(task_id)
 
     async with db.session() as s:
         task = await s.get(Task, task_id)

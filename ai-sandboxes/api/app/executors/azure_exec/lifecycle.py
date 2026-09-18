@@ -31,9 +31,9 @@ class Sandbox:
         self.org_id = org_id
         self.ttl_minutes = ttl_minutes
         self.run_id = uuid.uuid4().hex[:12]
-        self.rg_name = tagger.sandbox_rg_name(task_id)
-        self.identity_name = tagger.identity_name(task_id)
-        self.container_group = tagger.container_group_name(task_id)
+        self.rg_name = tagger.sandbox_rg_name(task_id, self.run_id)
+        self.identity_name = tagger.identity_name(task_id, self.run_id)
+        self.container_group = tagger.container_group_name(task_id, self.run_id)
         self.identity_id = ""
         self.identity_client_id = ""
         self.created_at = int(time.time())

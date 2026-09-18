@@ -24,15 +24,17 @@ def sandbox_tags(*, task_id: str, owner_sub: str, org_id: str, run_id: str,
     }
 
 
-def sandbox_rg_name(task_id: str) -> str:
+def sandbox_rg_name(task_id: str, run_id: str = "") -> str:
     """One RG per sandbox run, named so a human can find it in the portal and a
-    reaper can find all of ours with a single prefix scan."""
-    return f"ags-sb-{task_id}"
+    reaper can find all of ours with a single prefix scan. The run_id suffix makes
+    each run's RG unique: a re-run of the SAME task must never collide with the
+    previous run's RG while Azure is still deleting it (ResourceGroupBeingDeleted)."""
+    return f"ags-sb-{task_id}-{run_id}" if run_id else f"ags-sb-{task_id}"
 
 
-def identity_name(task_id: str) -> str:
-    return f"ags-id-{task_id}"
+def identity_name(task_id: str, run_id: str = "") -> str:
+    return f"ags-id-{task_id}-{run_id}" if run_id else f"ags-id-{task_id}"
 
 
-def container_group_name(task_id: str) -> str:
-    return f"ags-run-{task_id}"
+def container_group_name(task_id: str, run_id: str = "") -> str:
+    return f"ags-run-{task_id}-{run_id}" if run_id else f"ags-run-{task_id}"

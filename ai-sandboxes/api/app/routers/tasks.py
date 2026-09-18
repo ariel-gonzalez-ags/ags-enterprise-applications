@@ -35,6 +35,10 @@ def _task_json(t: Task, detail: bool = False) -> dict:
         "idempotent": t.idempotent,
         "checks": {"passed": t.checks_passed, "total": t.checks_total},
         "run_stage": t.run_stage,
+        # Server-authoritative kill-in-progress flag so the console's Stop button
+        # reflects reality across re-renders and re-approvals (a client-side flag
+        # desyncs: it survives a re-approve and shows "Stopping…" on a fresh run).
+        "stopping": killswitch.is_aborted(t.id) and t.state == "running",
         "agent_pending": t.agent_pending,        "updated": t.updated_at,
     }
     if detail:
