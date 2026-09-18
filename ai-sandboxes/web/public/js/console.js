@@ -530,6 +530,7 @@
   var stageSection = document.querySelector('[data-console="sandbox-section"]');
   var stageList = document.querySelector('[data-console="stages"]');
   var stopBtn = document.querySelector('[data-console="stop-run"]');
+  var stoppingId = null;  // task_id with a kill in flight (local, until SSE confirms)
 
   var emberSpent = document.querySelector('[data-console="ember-spent"]');
   var emberDetail = document.querySelector('[data-console="ember-detail"]');
@@ -564,8 +565,13 @@
   function renderStages() {
     if (!stageSection || !stageList) return;
     var running = selected && selected.state === 'running';
-    if (!running) { stageSection.hidden = true; return; }
+    if (!running) {
+      stageSection.hidden = true;
+      if (selected && selected.id === stoppingId) stoppingId = null;  // kill landed
+      return;
+    }
     stageSection.hidden = false;
+    var stopping = selected.id === stoppingId;
     var cur = selected.run_stage || 'provisioning';
     var curIdx = STAGES.findIndex(function (s) { return s[0] === cur; });
     if (curIdx < 0) curIdx = 0;
@@ -573,18 +579,35 @@
       var cls = i < curIdx ? 'done' : (i === curIdx ? 'active' : '');
       return '<li class="stage ' + cls + '"><span class="dot"></span>' + esc(s[1]) + '</li>';
     }).join('');
+    // Reflect a kill-in-progress on the button so a re-render (SSE nudge) does
+    // not snap it back to a clickable "Stop run" while the teardown runs.
+    if (stopBtn) {
+      stopBtn.disabled = stopping;
+      stopBtn.classList.toggle('stopping', stopping);
+      stopBtn.innerHTML = stopping
+        ? '<span class="stop-spin"></span> Stopping…'
+        : stopBtn.innerHTML;  // initial label comes from the component markup
+    }
   }
 
-  /* Kill switch (TODO #7): confirm, then POST abort. The server tears the
-   * sandbox down and settles the Ember burn; the task returns to planned. We
-   * re-fetch on the next SSE nudge, so no optimistic state change here. */
+  /* Kill switch (TODO #7): confirm, then POST abort. Feedback is immediate and
+   * local: the moment the user confirms, the button disables into "Stopping…"
+   * and stays that way across SSE re-renders (stoppingId) until the task drops
+   * out of running, so there is no dead window that invites spam-clicking. */
   if (stopBtn) {
     stopBtn.addEventListener('click', function () {
-      if (!selected || selected.state !== 'running') return;
+      if (!selected || selected.state !== 'running' || stoppingId === selected.id) return;
+      var id = selected.id;
       askConfirm('Stop this run and tear down its sandbox now? The Embers used up to this point still count.', function () {
-        api('/api/tasks/' + encodeURIComponent(selected.id) + '/abort', { method: 'POST' })
+        stoppingId = id;          // optimistic: show "Stopping…" right away
+        renderStages();
+        api('/api/tasks/' + encodeURIComponent(id) + '/abort', { method: 'POST' })
           .then(function () { refreshList(); })
-          .catch(function () { refreshList(); });
+          .catch(function () {
+            stoppingId = null;    // the kill request failed: re-arm the button
+            renderStages();
+            refreshList();
+          });
       }, 'Stop run?', 'Stop run');
     });
   }

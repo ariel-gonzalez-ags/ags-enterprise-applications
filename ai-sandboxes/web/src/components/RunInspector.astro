@@ -108,7 +108,12 @@ import Icon from './Icon.astro';
   /* Kill switch (TODO #7): destructive, so --red; sits under the stage list */
   .stop-run { display: inline-flex; align-items: center; gap: 7px; margin-top: 12px; padding: 7px 12px; background: none; border: 1px solid var(--line2); border-radius: 8px; color: var(--red); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; transition: border-color .15s, background .15s }
   .stop-run:hover { border-color: var(--red); background: rgba(229,72,77,.08) }
-  .stop-run:disabled { opacity: .5; cursor: default }
+  .stop-run:disabled { opacity: .65; cursor: default }
+  /* Kill in flight: neutral border, muted text, spinner; clearly not clickable */
+  .stop-run.stopping { color: var(--muted); border-color: var(--line) }
+  .stop-run.stopping:hover { background: none; border-color: var(--line) }
+  .stop-run :global(.stop-spin) { width: 11px; height: 11px; border-radius: 50%; border: 2px solid var(--line2); border-top-color: var(--muted); animation: stopspin .7s linear infinite }
+  @keyframes stopspin { to { transform: rotate(360deg) } }
   .stop-hint { margin: 7px 0 0; font-size: 11px; color: var(--muted2) }
 
   .ember-row { display: flex; align-items: baseline; gap: 8px }
