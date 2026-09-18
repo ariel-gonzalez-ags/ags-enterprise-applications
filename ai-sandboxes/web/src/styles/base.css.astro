@@ -2,6 +2,12 @@
 // Generic primitives shared across pages. Import where needed.
 ---
 <style is:global>
+  /* The [hidden] attribute must always win over any class that sets `display`
+     (flex/grid/block), or a hidden panel still shows. This one global rule is
+     the permanent fix; without it, e.g. a card gate with display:flex stayed
+     visible after it should have hidden. */
+  [hidden] { display: none !important }
+
   .wrap { max-width: 1200px; margin: 0 auto; padding: 0 32px }
 
   .btn {
