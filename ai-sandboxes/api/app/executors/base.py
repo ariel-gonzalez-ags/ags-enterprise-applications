@@ -29,6 +29,10 @@ class RunResult:
     files: dict[str, str] = field(default_factory=dict)
     idempotent: bool = False    # re-apply produced no change (the "verified" bar)
     note: str = ""              # short human summary of what happened
+    # Metering for the Ember ledger: how long the sandbox ran and how many LLM
+    # tokens the agent burned. Zero for simulated runs (no real resource used).
+    sandbox_seconds: int = 0
+    llm_tokens: int = 0
 
 
 class Executor(Protocol):

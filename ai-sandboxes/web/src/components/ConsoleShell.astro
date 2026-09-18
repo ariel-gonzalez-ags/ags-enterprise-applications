@@ -3,21 +3,30 @@
 // Height fills the viewport below the nav; panes scroll independently.
 // Anonymous users get redirected to /login by the gate script in app.astro;
 // the #gate overlay below is only a no-JS / script-failure fallback.
+// Single-pane pages (e.g. /usage) pass only the stage slot and get a centered
+// single column instead of the three-pane console grid.
 interface Props {
   title?: string;
 }
 const { title = 'Agisphire: Console' } = Astro.props;
+const single = !Astro.slots.has('rail') && !Astro.slots.has('inspector');
 import Base from '../layouts/Base.astro';
 import ConsoleNav from './ConsoleNav.astro';
 import Logo from './Logo.astro';
 ---
 <Base title={title} auth>
   <ConsoleNav />
-  <div class="console">
-    <aside class="pane rail"><slot name="rail" /></aside>
-    <main class="pane stage"><slot name="stage" /></main>
-    <aside class="pane inspector"><slot name="inspector" /></aside>
-  </div>
+  {single ? (
+    <div class="console single">
+      <main class="pane stage"><slot name="stage" /></main>
+    </div>
+  ) : (
+    <div class="console">
+      <aside class="pane rail"><slot name="rail" /></aside>
+      <main class="pane stage"><slot name="stage" /></main>
+      <aside class="pane inspector"><slot name="inspector" /></aside>
+    </div>
+  )}
 
   <div id="gate" hidden class="gate-overlay">
     <div class="gate-card">
@@ -40,6 +49,8 @@ import Logo from './Logo.astro';
   .rail { border-right: 1px solid var(--line); background: var(--panel) }
   .inspector { border-left: 1px solid var(--line); background: var(--panel) }
   .stage { display: flex; flex-direction: column }
+  .console.single { display: block; max-width: 860px; margin: 0 auto }
+  .console.single .stage { padding: 32px 24px 64px }
 
   .gate-overlay {
     position: fixed; inset: 0; z-index: 60; display: grid; place-items: center;

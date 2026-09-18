@@ -1,0 +1,29 @@
+---
+// Usage: a minimal page for what a user has consumed. Balance, allowance
+// progress, and a per-run history. Static shell; usage.js fills it from
+// /api/embers. Pattern follows opencode's billing page: no charts, just the
+// numbers. Gated to signed-in users like /app.
+import ConsoleShell from '../components/ConsoleShell.astro';
+import UsagePanel from '../components/UsagePanel.astro';
+---
+<ConsoleShell title="Agisphire: Usage">
+  <UsagePanel slot="stage" />
+</ConsoleShell>
+
+<script>
+  // Gate: anonymous → /login; signed in → boot the usage client.
+  fetch('/api/auth/me', { credentials: 'same-origin' })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (data) {
+      if (!data || !data.user) {
+        window.location.replace('/login');
+        return;
+      }
+      var s = document.createElement('script');
+      s.src = '/js/usage.js';
+      document.body.appendChild(s);
+    })
+    .catch(function () {
+      document.getElementById('gate').hidden = false;
+    });
+</script>

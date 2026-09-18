@@ -132,6 +132,27 @@ the user before implementing**. See "Evolution path".
   `fetch_docs(url)` tool to consult current official docs (MS Learn, terraform
   registry) instead of guessing from training data. Patterns borrowed from
   OpenCode/Claude Code/OpenClaw harnesses.
+  **Embers (cost meter).** 1 Ember = $0.01, the customer-facing unit. Every run
+  burns Embers from two meters we control exactly: sandbox-seconds (we create
+  and destroy the sandbox) + agent LLM tokens (Gemini returns `usage`; the
+  in-container agent prints a `USAGE_TOKENS:` line the executor parses).
+  `app/embers.py` rates them at a blended configurable rate
+  (`EMBER_PER_SANDBOX_MIN` + `EMBER_PER_1K_TOKENS`). Per-user `ember_accounts`
+  balance + append-only `ember_ledger`; the trial allowance
+  (`EMBER_TRIAL_ALLOWANCE`) is granted once per user and is the trial gate. The
+  `/approve` route refuses with 402 when balance < estimated cost; the agent
+  also self-limits mid-run (warns at 80% of `AGS_BUDGET_SECONDS`, grace window
+  `EMBER_GRACE_SECONDS` to write deliverables, then stops) so an over-budget run
+  never loses work silently. Embers are decoupled from real Azure spend on
+  purpose (CostEvent reconciles margin internally); this is the industry pattern
+  (Copilot credits, Anthropic CCU): never show raw infra cost, meter a logical
+  unit.   Stripe top-up + card-gated trial (real anti-multi-account) is Phase 2.
+  **`/usage` page.** A minimal usage/showback page (opencode-style: no charts,
+  just numbers). Single-pane shell (ConsoleShell renders one centered column
+  when only the `stage` slot is passed), `UsagePanel.astro` + `usage.js`
+  rendering balance, an allowance progress bar (spent vs granted), aggregate
+  stats, and a per-run history from `/api/embers`. Linked from ConsoleNav; the
+  nav `active` state is path-aware (`Astro.url.pathname`).
 
 ## Directory map
 
@@ -206,9 +227,10 @@ the user before implementing**. See "Evolution path".
    "Brand system" below.
  8. **Client-side JS is an explicit exception, not a pattern.** The sanctioned
    scripts are `public/js/auth.js` (nav auth state), `public/js/console.js`
-   (/app data flow against `/api/tasks*`), the gate script in
-   `pages/app.astro`, and the signed-in bounce in `pages/login.astro`. All
-   are vanilla, IIFE/scoped, and only call `/api/*`.
+   (/app data flow against `/api/tasks*`), `public/js/usage.js` (/usage data
+   flow against `/api/embers`), the gate script in `pages/app.astro`, and the
+   signed-in bounce in `pages/login.astro`. All are vanilla, IIFE/scoped, and
+   only call `/api/*`.
    console.js renders into `data-console="*"` hooks in the component shells;
    **any markup it injects needs `:global()` selectors in the component's
    `<style>`**: Astro scoping doesn't reach runtime DOM. Any further client

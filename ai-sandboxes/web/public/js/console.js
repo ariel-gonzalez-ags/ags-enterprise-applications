@@ -525,6 +525,36 @@
   var stageSection = document.querySelector('[data-console="sandbox-section"]');
   var stageList = document.querySelector('[data-console="stages"]');
 
+  var emberSpent = document.querySelector('[data-console="ember-spent"]');
+  var emberDetail = document.querySelector('[data-console="ember-detail"]');
+  var emberBalance = document.querySelector('[data-console="ember-balance"]');
+  var emberBal = null;  // from GET /api/embers
+
+  function renderCost() {
+    if (!emberSpent) return;
+    var cost = selected && selected.cost;
+    if (cost && cost.embers > 0) {
+      emberSpent.textContent = cost.embers;
+      emberDetail.textContent = cost.sandboxSeconds + 's compute · ' +
+        cost.llmTokens.toLocaleString() + ' tokens';
+    } else {
+      emberSpent.textContent = '—';
+      emberDetail.textContent = selected && selected.state === 'running'
+        ? 'metered when the run settles' : 'no run cost yet';
+    }
+    if (emberBalance) {
+      emberBalance.textContent = 'Balance: ' +
+        (emberBal === null ? '…' : emberBal + ' Embers');
+    }
+  }
+
+  function loadEmbers() {
+    api('/api/embers').then(function (d) {
+      emberBal = d.balance;
+      renderCost();
+    }).catch(function () { /* leave balance placeholder */ });
+  }
+
   function renderStages() {
     if (!stageSection || !stageList) return;
     var running = selected && selected.state === 'running';
@@ -545,6 +575,7 @@
     tglIdem.classList.toggle('on', !!(selected && selected.idempotent));
     tglDestroy.classList.toggle('on', !!(selected && selected.config && selected.config.destroyAfter));
     budget.textContent = selected && selected.config ? selected.config.maxHours + 'h' : '—';
+    renderCost();
 
     var arts = selected ? selected.artifacts : [];
     if (!arts.length) {
@@ -702,7 +733,7 @@
         selected = t;
         renderAll();
         refreshList();
-        if (!(t.state === 'running' || t.agent_pending)) closeStream();
+        if (!(t.state === 'running' || t.agent_pending)) { closeStream(); loadEmbers(); }
       }).catch(function () {});
     };
     es.onerror = function () {
@@ -835,6 +866,7 @@
 
   /* ---------- boot ---------- */
 
+  loadEmbers();
   refreshList().then(function () {
     if (tasks.length) select(tasks[0].id);
     else renderAll();
