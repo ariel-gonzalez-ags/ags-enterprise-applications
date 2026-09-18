@@ -25,9 +25,9 @@ class Settings:
     # Embers from sandbox-seconds + agent LLM tokens at a blended rate. Users
     # get a one-time trial allowance; at zero, runs are refused until top-up.
     ember_peg_usd: float = 0.01          # USD per Ember (invoice-stable peg)
-    ember_per_sandbox_min: float = 2.0   # Embers per minute of sandbox compute
-    ember_per_1k_tokens: float = 5.0     # Embers per 1k agent LLM tokens
-    ember_trial_allowance: int = 150     # one-time grant, ~3 small runs
+    ember_per_sandbox_min: float = 3.0   # Embers per minute of sandbox compute
+    ember_per_1k_tokens: float = 2.0     # Embers per 1k agent LLM tokens
+    ember_trial_allowance: int = 300     # one-time grant, ~4-5 typical runs
     ember_grace_seconds: int = 60        # wrap-up window at the budget cap
 
     @property
@@ -72,8 +72,8 @@ def load() -> Settings:
         azure_client_secret=os.getenv("AZURE_CLIENT_SECRET", ""),
         azure_location=os.getenv("AZURE_LOCATION", "eastus"),
         ember_peg_usd=float(os.getenv("EMBER_PEG_USD", "0.01")),
-        ember_per_sandbox_min=float(os.getenv("EMBER_PER_SANDBOX_MIN", "2")),
-        ember_per_1k_tokens=float(os.getenv("EMBER_PER_1K_TOKENS", "5")),
-        ember_trial_allowance=int(os.getenv("EMBER_TRIAL_ALLOWANCE", "150")),
+        ember_per_sandbox_min=float(os.getenv("EMBER_PER_SANDBOX_MIN", "3")),
+        ember_per_1k_tokens=float(os.getenv("EMBER_PER_1K_TOKENS", "2")),
+        ember_trial_allowance=int(os.getenv("EMBER_TRIAL_ALLOWANCE", "300")),
         ember_grace_seconds=int(os.getenv("EMBER_GRACE_SECONDS", "60")),
     )
