@@ -29,6 +29,15 @@ class Settings:
     ember_per_1k_tokens: float = 2.0     # Embers per 1k agent LLM tokens
     ember_trial_allowance: int = 300     # one-time grant, ~4-5 typical runs
     ember_grace_seconds: int = 60        # wrap-up window at the budget cap
+    # Stripe (Phase 2b): Ember top-up + card-gated trial. Server-side secret key
+    # only; the browser is redirected to Stripe-hosted Checkout, so card data
+    # never touches us. Webhook secret verifies inbound payment events.
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
+    ember_min_topup_usd: float = 10.0    # minimum credit purchase (Stripe fee floor)
+    # Trial gate: when on (and Stripe configured), the trial allowance is granted
+    # only after the user puts a card on file (a $0 SetupIntent). Anti-multi-account.
+    stripe_card_gate: bool = True
 
     @property
     def oauth_configured(self) -> bool:
@@ -53,6 +62,12 @@ class Settings:
         return bool(self.azure_subscription_id and self.azure_tenant_id
                     and self.azure_client_id and self.azure_client_secret)
 
+    @property
+    def stripe_configured(self) -> bool:
+        """A secret key is present, so top-up + card-gate can run. Reported on
+        /api/healthz; without it the billing endpoints return 503."""
+        return bool(self.stripe_secret_key)
+
 
 def load() -> Settings:
     return Settings(
@@ -76,4 +91,8 @@ def load() -> Settings:
         ember_per_1k_tokens=float(os.getenv("EMBER_PER_1K_TOKENS", "2")),
         ember_trial_allowance=int(os.getenv("EMBER_TRIAL_ALLOWANCE", "300")),
         ember_grace_seconds=int(os.getenv("EMBER_GRACE_SECONDS", "60")),
+        stripe_secret_key=os.getenv("STRIPE_SECRET_KEY", ""),
+        stripe_webhook_secret=os.getenv("STRIPE_WEBHOOK_SECRET", ""),
+        ember_min_topup_usd=float(os.getenv("EMBER_MIN_TOPUP_USD", "10")),
+        stripe_card_gate=os.getenv("STRIPE_CARD_GATE", "1") == "1",
     )

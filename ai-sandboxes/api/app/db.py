@@ -51,6 +51,18 @@ async def create_schema() -> None:
             await conn.execute(
                 text("ALTER TABLE ember_ledger ADD COLUMN model VARCHAR(40) NOT NULL DEFAULT ''")
             )
+        # ember_accounts gains the Stripe linkage (Phase 2b): customer id + a
+        # card-on-file flag for the trial gate.
+        acols = {row[1] for row in (await conn.execute(text("PRAGMA table_info(ember_accounts)"))).all()}
+        if acols:
+            if "stripe_customer_id" not in acols:
+                await conn.execute(
+                    text("ALTER TABLE ember_accounts ADD COLUMN stripe_customer_id VARCHAR(64) NOT NULL DEFAULT ''")
+                )
+            if "card_on_file" not in acols:
+                await conn.execute(
+                    text("ALTER TABLE ember_accounts ADD COLUMN card_on_file BOOLEAN NOT NULL DEFAULT 0")
+                )
 
 
 def session() -> AsyncSession:

@@ -78,10 +78,12 @@ check('usage: gate boots usage.js for signed-in users', usage.includes('/js/usag
 check('usage: gate redirects anonymous to /login', /location\.replace\(['`]\/login['`]\)/.test(usage));
 check('usage: console nav links Usage', usage.includes('href="/usage"'));
 check('usage: month nav + by-model hooks', usage.includes('data-usage="month-label"') && usage.includes('data-usage="by-model"'));
+check('usage: billing hooks (card gate + top-up + packs)', usage.includes('data-usage="card-gate"') && usage.includes('data-usage="topup-card"') && usage.includes('data-usage="pack"'));
 
 const usageJs = read('js/usage.js');
 check('asset: usage.js is an IIFE', usageJs.includes('(function () {'));
 check('asset: usage.js calls embers API', usageJs.includes('/api/embers'));
+check('asset: usage.js wires billing endpoints', usageJs.includes('/api/billing/topup') && usageJs.includes('/api/billing/card-setup') && usageJs.includes('/api/billing/config'));
 check('asset: usage.js renders text not untrusted html', usageJs.includes('textContent'));
 
 const consoleJs = read('js/console.js');

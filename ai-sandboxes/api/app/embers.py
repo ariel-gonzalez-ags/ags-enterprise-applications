@@ -35,15 +35,20 @@ def estimate_run_cost(settings, est_minutes: int = 4, est_tokens: int = 4000) ->
 
 
 async def get_or_create(owner_sub: str, settings) -> EmberAccount:
-    """Load the user's account, creating it (and granting the one-time trial
-    allowance) on first sight. The trial gates new users to a handful of runs."""
+    """Load the user's account, creating it on first sight. The trial allowance
+    is granted once, but only when the card gate is satisfied: with the gate on
+    (and Stripe configured), a card must be on file before the trial lands (this
+    is the anti-multi-account control). With the gate off or Stripe unconfigured,
+    the trial grants immediately as before."""
     async with db.session() as s:
         acct = await s.get(EmberAccount, owner_sub)
         if acct is None:
             acct = EmberAccount(owner_sub=owner_sub, balance=0, trial_granted=False)
             s.add(acct)
             await s.commit()
-        if not acct.trial_granted and settings.ember_trial_allowance > 0:
+        gate_blocks = (settings.stripe_card_gate and settings.stripe_configured
+                       and not acct.card_on_file)
+        if not acct.trial_granted and settings.ember_trial_allowance > 0 and not gate_blocks:
             acct.trial_granted = True
             acct.balance += settings.ember_trial_allowance
             s.add(EmberLedger(owner_sub=owner_sub,

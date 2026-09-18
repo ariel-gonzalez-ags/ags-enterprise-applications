@@ -9,8 +9,23 @@ export const usage = {
   ledeUnit: 'Embers',
   ledePost: 'from compute time and model tokens. This is your balance and where it went.',
   unit: 'Embers',
-  topup: 'Top up · soon',
-  topupTitle: 'Top-up arrives with billing (soon)',
+  // Top-up (Stripe). The panel maps over `packs`; custom amount has a $ minimum.
+  topupTitle: 'Add Embers',
+  topupNote: 'Embers never expire. 1 Ember = $0.01. Secure checkout by Stripe; we never see your card.',
+  topupCustomLabel: 'Custom amount (USD)',
+  topupCustomPlaceholder: '25',
+  topupGo: 'Continue to checkout',
+  topupMinError: 'Minimum is $',
+  packs: [
+    { usd: 10, label: '$10' },
+    { usd: 25, label: '$25' },
+    { usd: 50, label: '$50' },
+  ],
+  // Card gate: shown to a new user with no card on file (trial not yet unlocked).
+  cardGateTitle: 'Unlock your trial',
+  cardGateBody: 'Add a card to start your trial allowance. It is not charged; it just keeps one account per person. Secure setup by Stripe.',
+  cardGateGo: 'Add a card',
+  cardGateDone: 'Card on file',
   stats: { runs: 'Runs', compute: 'Compute', tokens: 'Tokens', spent: 'Spent' },
   byModel: 'By model',
   history: 'History',
@@ -20,4 +35,5 @@ export const usage = {
   emptyModel: 'No model usage in this period.',
   noAllowance: 'No allowance yet',
   loadError: 'Could not load usage. Try refreshing.',
+  billingOff: 'Billing is not enabled yet.',
 };

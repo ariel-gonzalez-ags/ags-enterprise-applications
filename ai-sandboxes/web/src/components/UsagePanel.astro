@@ -16,10 +16,38 @@ import { usage as t } from '../content/usage.js';
         <div class="bal-num mono"><span data-usage="balance">—</span> <span class="unit">{t.unit}</span></div>
         <div class="bal-sub" data-usage="usd">—</div>
       </div>
-      <span class="btn ghost sm soon" data-usage="topup" title={t.topupTitle}>{t.topup}</span>
     </div>
     <div class="bar" data-usage="bar"><span class="bar-fill" data-usage="bar-fill"></span></div>
     <div class="bar-sub mono" data-usage="bar-label">—</div>
+  </div>
+
+  <!-- Card gate (trial unlock). Shown only to a new user with no card on file. -->
+  <div class="card-gate" data-usage="card-gate" hidden>
+    <div class="cg-text">
+      <div class="cg-title"><Icon name="shield" size={15} /> {t.cardGateTitle}</div>
+      <div class="cg-body">{t.cardGateBody}</div>
+    </div>
+    <button class="btn sm" data-usage="card-gate-go" type="button">{t.cardGateGo}</button>
+  </div>
+
+  <!-- Top-up: credit packs + a custom amount ($ minimum). Redirects to Stripe. -->
+  <div class="topup" data-usage="topup-card" hidden>
+    <div class="topup-h"><Icon name="plus" size={14} /> {t.topupTitle}</div>
+    <div class="packs">
+      {t.packs.map((p) => (
+        <button class="pack mono" data-usage="pack" data-usd={p.usd} type="button">{p.label}</button>
+      ))}
+      <div class="pack-custom">
+        <input class="mono" data-usage="custom-usd" type="number" min="10" step="1"
+               inputmode="numeric" placeholder={t.topupCustomPlaceholder}
+               aria-label={t.topupCustomLabel} />
+      </div>
+    </div>
+    <div class="topup-foot">
+      <button class="btn sm" data-usage="topup-go" type="button">{t.topupGo}</button>
+      <span class="topup-err mono" data-usage="topup-err" hidden></span>
+    </div>
+    <p class="topup-note">{t.topupNote}</p>
   </div>
 
   <div class="usage-nav">
@@ -61,6 +89,25 @@ import { usage as t } from '../content/usage.js';
   .bar { height: 6px; background: var(--line); border-radius: 99px; overflow: hidden }
   .bar-fill { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 99px; transition: width .4s }
   .bar-sub { font-size: 11.5px; color: var(--muted2); margin-top: 8px }
+
+  /* Card gate (trial unlock) */
+  .card-gate { display: flex; align-items: center; justify-content: space-between; gap: 16px; background: var(--panel); border: 1px solid var(--line2); border-radius: var(--radius); padding: 16px 18px; margin-bottom: 14px }
+  .cg-title { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 600; color: var(--text); margin-bottom: 4px }
+  .cg-title svg { color: var(--accent) }
+  .cg-body { font-size: 12px; color: var(--muted); line-height: 1.5; max-width: 46ch }
+
+  /* Top-up */
+  .topup { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; margin-bottom: 26px }
+  .topup-h { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 14px }
+  .packs { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px }
+  .pack { background: var(--panel2); border: 1px solid var(--line2); color: var(--text); padding: 10px 18px; border-radius: 8px; font-size: 14px; cursor: pointer; transition: .15s }
+  .pack:hover { border-color: var(--accent) }
+  .pack.sel { border-color: var(--accent); background: rgba(240,86,35,.08); color: var(--accent) }
+  .pack-custom input { background: var(--panel2); border: 1px solid var(--line2); color: var(--text); padding: 10px 14px; border-radius: 8px; font-size: 14px; width: 110px }
+  .pack-custom input:focus { outline: none; border-color: var(--accent) }
+  .topup-foot { display: flex; align-items: center; gap: 12px }
+  .topup-err { font-size: 12px; color: var(--red) }
+  .topup-note { font-size: 11.5px; color: var(--muted2); margin: 12px 0 0; line-height: 1.5 }
 
   .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 30px }
   .stat { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px }

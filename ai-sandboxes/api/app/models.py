@@ -121,6 +121,10 @@ class EmberAccount(Base):
     owner_sub: Mapped[str] = mapped_column(String(64), primary_key=True)
     balance: Mapped[int] = mapped_column(Integer, default=0)
     trial_granted: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Stripe (Phase 2b): the user's Stripe customer id, and whether they have a
+    # card on file (the trial gate: trial is granted only once a card exists).
+    stripe_customer_id: Mapped[str] = mapped_column(String(64), default="")
+    card_on_file: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[int] = mapped_column(Integer, default=now)
 
 
