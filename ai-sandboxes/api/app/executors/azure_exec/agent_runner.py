@@ -16,7 +16,7 @@ from __future__ import annotations
 # The actual in-container program. Written as a string so the executor can
 # base64 it into the ACI `command` without a custom image build. Kept terse.
 SCRIPT = r'''
-import json, os, subprocess, sys, base64, urllib.request, re
+import json, os, subprocess, sys, base64, urllib.request, re, time
 from openai import OpenAI
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
@@ -171,7 +171,26 @@ messages = [{"role": "system", "content": SYSTEM},
              % (REQUIREMENT, RG, TAGS)}]
 
 done, summary = False, ""
+total_tokens = 0
+STARTED = time.time()
+BUDGET_S = int(os.environ.get("AGS_BUDGET_SECONDS", "0"))   # 0 = no cap
+GRACE_S = int(os.environ.get("AGS_GRACE_SECONDS", "60"))
+warned = False
 for step in range(1, MAX_STEPS + 1):
+    # Ember budget: warn at 80% so the agent wraps up cleanly; at the cap, push
+    # it to write deliverables and declare_done within a short grace window
+    # rather than dying mid-flight and losing work.
+    elapsed = time.time() - STARTED
+    if BUDGET_S and not warned and elapsed > 0.8 * BUDGET_S:
+        warned = True
+        messages.append({"role": "user", "content":
+            "[budget] You are at ~80% of your compute budget. Wrap up NOW: write "
+            "any remaining deliverable files, verify quickly, and call declare_done."})
+        print("[budget] 80% used; wrapping up", flush=True)
+    if BUDGET_S and elapsed > BUDGET_S + GRACE_S:
+        summary = "budget exhausted before the outcome was declared"
+        print("INCOMPLETE budget exhausted", flush=True)
+        break
     # Keep context lean before each call: prune old tool outputs, compact the
     # history if we are nearing the budget, and periodically restate the goal.
     prune_tools(messages)
@@ -187,6 +206,9 @@ for step in range(1, MAX_STEPS + 1):
     # explicit nulls ("Value is not a struct: null"), it wants them omitted.
     msg = {k: v for k, v in resp.choices[0].message.model_dump(mode="json").items()
            if v is not None}
+    usage = getattr(resp, "usage", None)
+    if usage is not None:
+        total_tokens += int(getattr(usage, "total_tokens", 0) or 0)
     messages.append(msg)
     if not msg.get("tool_calls"):
         print("agent:", (msg.get("content") or "")[:200], flush=True)
@@ -219,6 +241,7 @@ for step in range(1, MAX_STEPS + 1):
 
 print("DONE" if done else "INCOMPLETE", flush=True)
 print("SUMMARY: " + summary, flush=True)
+print("USAGE_TOKENS: %d" % total_tokens, flush=True)
 for fname in OUTPUTS:
     try:
         with open(fname) as fh:

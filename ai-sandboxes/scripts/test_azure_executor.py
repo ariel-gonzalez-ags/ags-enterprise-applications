@@ -19,6 +19,7 @@ os.environ["DB_PATH"] = os.path.join(_tmp, "t.db")
 from app.config import load
 from app.executors.base import RunPayload
 from app.executors.azure_exec import lifecycle, tags as tagger
+from app import db, embers
 
 
 def _settings(**over):
@@ -254,6 +255,35 @@ async def test_compact_shrinks_history():
     print("ok    context: compaction summarizes head, keeps verbatim tail")
 
 
+async def test_embers():
+    _settings()
+    db.init(os.environ["DB_PATH"])
+    await db.create_schema()
+    s = load()
+    # rating: blended seconds + tokens, rounds up, floor of 0
+    assert embers.cost_embers(s, 0, 0) == 0
+    # 4 min * 2/min = 8, plus 4000/1000 * 5 = 20 -> 28
+    assert embers.cost_embers(s, 240, 4000) == 28
+    # trial grant: first sight creates the account with the allowance
+    bal = await embers.balance("user-a", s)
+    assert bal == s.ember_trial_allowance
+    # affordability gate: a small estimate passes on a fresh trial balance
+    ok, bal, est = await embers.can_afford("user-a", s)
+    assert ok is True and est == embers.estimate_run_cost(s)
+    # burn: decrements balance, records meter quantities in the ledger
+    new_bal = await embers.burn("user-a", "task-1", 30, 240, 4000)
+    assert new_bal == s.ember_trial_allowance - 30
+    # a user with no balance cannot afford a run
+    await embers.burn("user-a", "task-2", new_bal, 10, 10)  # drain to 0
+    ok, bal, _ = await embers.can_afford("user-a", s)
+    assert ok is False and bal == 0
+    # usage tokens parsed from a transcript
+    from app.executors.azure_exec import executor
+    assert executor._usage_tokens("line\nUSAGE_TOKENS: 4321\n") == 4321
+    assert executor._usage_tokens("no usage here") == 0
+    print("ok    embers: rate, trial grant, afford gate, burn, usage parse")
+
+
 _TRANSCRIPT = """agent: planning
 tool: run_shell {"command": "az storage account create ..."}
   -> (exit 0) created
@@ -341,6 +371,7 @@ async def main():
     await test_agent_loop_declares_done()
     test_context_helpers()
     await test_compact_shrinks_history()
+    await test_embers()
     await test_executor_end_to_end_in_container()
     await test_executor_failed_run_returns_not_ok()
     print("\nAzure executor: all checks passed (mocked, no spend)")

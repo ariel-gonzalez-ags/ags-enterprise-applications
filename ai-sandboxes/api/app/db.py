@@ -38,6 +38,13 @@ async def create_schema() -> None:
             await conn.execute(
                 text("ALTER TABLE tasks ADD COLUMN run_log TEXT NOT NULL DEFAULT ''")
             )
+        for col, ddl in (
+            ("embers_spent", "INTEGER NOT NULL DEFAULT 0"),
+            ("sandbox_seconds", "INTEGER NOT NULL DEFAULT 0"),
+            ("llm_tokens", "INTEGER NOT NULL DEFAULT 0"),
+        ):
+            if col not in cols:
+                await conn.execute(text(f"ALTER TABLE tasks ADD COLUMN {col} {ddl}"))
 
 
 def session() -> AsyncSession:

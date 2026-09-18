@@ -7,9 +7,9 @@ from fastapi.responses import PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from .. import db, events, planner, runner
+from .. import db, embers, events, planner, runner
 from ..config import Settings
-from ..models import Artifact, Message, Task
+from ..models import Artifact, EmberLedger, Message, Task
 from ..session import get_session
 
 router = APIRouter()
@@ -45,6 +45,11 @@ def _task_json(t: Task, detail: bool = False) -> dict:
             "maxHours": t.max_hours,
         }
         out["run_log"] = t.run_log  # live agent transcript during a run
+        out["cost"] = {             # Ember burn for this task (0 until it ran)
+            "embers": t.embers_spent,
+            "sandboxSeconds": t.sandbox_seconds,
+            "llmTokens": t.llm_tokens,
+        }
         out["messages"] = [
             {"role": m.role, "text": m.text, "plan": m.plan_json, "at": m.created_at}
             for m in t.messages
@@ -92,6 +97,26 @@ async def list_models(user: dict = Depends(_user)):
     """Planner models the user can pick from. Data-driven; the source of
     truth is planner.MODELS."""
     return {"models": planner.MODELS}
+
+
+@router.get("/embers")
+async def get_embers(request: Request, user: dict = Depends(_user)):
+    """The caller's Ember balance and recent ledger. Embers are the cost meter:
+    1 Ember = $0.01. Trial is granted on first call; top-up comes with Stripe
+    (Phase 2)."""
+    settings = _settings(request)
+    bal = await embers.balance(user["sub"], settings)
+    async with db.session() as s:
+        rows = (await s.execute(
+            select(EmberLedger).where(EmberLedger.owner_sub == user["sub"])
+            .order_by(EmberLedger.created_at.desc()).limit(20))).scalars().all()
+    return {
+        "balance": bal,
+        "peg_usd": settings.ember_peg_usd,
+        "recent": [{"delta": r.delta, "reason": r.reason, "task_id": r.task_id,
+                    "sandbox_seconds": r.sandbox_seconds, "llm_tokens": r.llm_tokens,
+                    "at": r.created_at} for r in rows],
+    }
 
 
 @router.post("/tasks", status_code=201)
@@ -318,14 +343,22 @@ async def chat(task_id: str, body: ChatIn, request: Request, user: dict = Depend
 
 @router.post("/tasks/{task_id}/approve")
 async def approve(task_id: str, request: Request, user: dict = Depends(_user)):
+    settings = _settings(request)
     async with db.session() as s:
         t = await s.get(Task, task_id)
         if t is None or t.owner_sub != user["sub"]:
             raise HTTPException(404, "task not found")
         if t.state != "planned":
             raise HTTPException(409, f"cannot approve a task in state {t.state}")
+        # Ember gate: refuse a run the user cannot pay for. Grants the one-time
+        # trial allowance on first approval. Real burn is settled at teardown.
+        allowed, bal, est = await embers.can_afford(user["sub"], settings)
+        if not allowed:
+            raise HTTPException(
+                402, f"insufficient Embers: balance {bal}, estimated cost {est}. "
+                     "Top up to run more sandboxes.")
         t.state = "running"
         t.checks_passed = 0
         await s.commit()
-    runner.spawn(task_id, _settings(request))
+    runner.spawn(task_id, settings)
     return {"id": task_id, "state": "running"}

@@ -5,7 +5,7 @@ the swap point is run_task() itself. Progress is posted as agent messages so
 the thread narrates the run (real executors will do the same)."""
 import asyncio
 
-from . import db, events
+from . import db, embers, events
 from .models import Artifact, Message, Task
 
 _TICK_SECONDS = 3  # dev-friendly; real runs will be event-driven
@@ -203,6 +203,9 @@ async def _run_real(task_id: str, settings) -> None:
         events.publish(task_id)
         # Backend-neutral payload: the agent is given the requirement + context
         # and the deliverables to produce; how it executes is the backend's job.
+        # AGS_EMBER_BUDGET is the user's current balance, so the executor can
+        # gracefully stop a run that is about to overspend (warn, wrap up, burn).
+        ember_budget = await embers.balance(task.owner_sub, settings)
         payload = RunPayload(
             run_id=task.id,
             image="",
@@ -215,6 +218,7 @@ async def _run_real(task_id: str, settings) -> None:
                 "AGS_MODEL": task.model,
                 "AGS_REQUIREMENT": task.title,
                 "AGS_OUTPUTS": ",".join(fn for fn, _ in files),
+                "AGS_EMBER_BUDGET": str(ember_budget),
             },
             timeout_seconds=max(60, min(int(task.max_hours or 4) * 3600, 4 * 3600)),
         )
@@ -251,7 +255,7 @@ async def _run_real(task_id: str, settings) -> None:
                                    size=f"{max(1, len(live) // 1024)} KB",
                                    note="full sandbox transcript", content=live))
                     await s.commit()
-        await _finish_run(task_id, files, res)
+        await _finish_run(task_id, files, res, settings)
     finally:
         # Whatever happened, a finished run must not look stuck on a stage.
         async with db.session() as s:
@@ -262,11 +266,22 @@ async def _run_real(task_id: str, settings) -> None:
                 events.publish(task_id)
 
 
-async def _finish_run(task_id: str, files, res) -> None:
+async def _finish_run(task_id: str, files, res, settings) -> None:
+    # Settle the Ember burn from the measured meters (sandbox seconds + LLM
+    # tokens) before reporting, so the cost line in the wrap-up is real.
+    burn_embers = embers.cost_embers(settings, res.sandbox_seconds, res.llm_tokens)
     async with db.session() as s:
         task = await s.get(Task, task_id)
         if task is None:
             return
+        new_balance = await embers.burn(task.owner_sub, task_id, burn_embers,
+                                        res.sandbox_seconds, res.llm_tokens)
+        task.embers_spent = burn_embers
+        task.sandbox_seconds = res.sandbox_seconds
+        task.llm_tokens = res.llm_tokens
+        cost_note = (f" Cost: {burn_embers} Embers "
+                     f"({res.sandbox_seconds}s compute, {res.llm_tokens} tokens); "
+                     f"balance {new_balance}.")
         task.run_stage = ""  # run is over; clear the stage indicator
         if res.ok and res.idempotent:
             for fn, fmt in files:
@@ -281,13 +296,14 @@ async def _finish_run(task_id: str, files, res) -> None:
             task.state = "verified"
             await _say(s, task_id,
                        f"Verified: {len(files)} deliverable(s). Sandbox torn down, "
-                       "evidence kept.")
+                       f"evidence kept.{cost_note}")
         else:
             s.add(Artifact(task_id=task_id, filename="verify.log", kind="log",
                            size=f"{max(1, len(res.log) // 1024)} KB",
                            note="run log (failed)", content=res.log))
             task.state = "planned"  # back to shapeable; not a verified record
             await _say(s, task_id,
-                       f"Run did not verify ({res.note}). Back to planned so you can adjust.")
+                       f"Run did not verify ({res.note}). Back to planned so you can "
+                       f"adjust.{cost_note}")
         await s.commit()
         events.publish(task_id)

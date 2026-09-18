@@ -46,6 +46,11 @@ class Task(Base):
     # so the console can render a live activity feed, not a frozen thread.
     # Persisted; becomes part of the run's evidence after completion.
     run_log: Mapped[str] = mapped_column(Text, default="")
+    # Ember cost of the latest run (the customer-facing meter). Stamped at
+    # run completion from the executor's measured seconds/tokens.
+    embers_spent: Mapped[int] = mapped_column(Integer, default=0)
+    sandbox_seconds: Mapped[int] = mapped_column(Integer, default=0)
+    llm_tokens: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[int] = mapped_column(Integer, default=now)
     updated_at: Mapped[int] = mapped_column(Integer, default=now, onupdate=now)
 
@@ -105,3 +110,31 @@ class CostEvent(Base):
     created_at: Mapped[int] = mapped_column(Integer, default=now)
     destroyed_at: Mapped[int] = mapped_column(Integer, default=0)
     duration_seconds: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class EmberAccount(Base):
+    """One row per user: their Ember balance. Embers are the customer-facing
+    cost meter (1 Ember = $0.01). The balance is a cached sum of the ledger;
+    EmberLedger is the audit trail. Trial allowance is granted once."""
+    __tablename__ = "ember_accounts"
+
+    owner_sub: Mapped[str] = mapped_column(String(64), primary_key=True)
+    balance: Mapped[int] = mapped_column(Integer, default=0)
+    trial_granted: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[int] = mapped_column(Integer, default=now)
+
+
+class EmberLedger(Base):
+    """Append-only movement of Embers. Negative delta = burn, positive = grant
+    or top-up. Carries the raw meter quantities (sandbox seconds, LLM tokens)
+    so the blended rate can be re-derived or re-priced later."""
+    __tablename__ = "ember_ledger"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    owner_sub: Mapped[str] = mapped_column(String(64), index=True)
+    task_id: Mapped[str] = mapped_column(String(36), index=True, default="")
+    delta: Mapped[int] = mapped_column(Integer)          # Embers; negative = burn
+    reason: Mapped[str] = mapped_column(String(24))      # trial_grant|run_burn|topup
+    sandbox_seconds: Mapped[int] = mapped_column(Integer, default=0)
+    llm_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[int] = mapped_column(Integer, default=now)

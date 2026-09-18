@@ -12,6 +12,7 @@ agent never holds subscription-level credentials.
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import AsyncIterator
 
 from ..base import RunPayload, RunResult
@@ -83,6 +84,13 @@ class AzureExecutor:
             tags = tagger.sandbox_tags(
                 task_id=task_id, owner_sub=sb.owner_sub, org_id=sb.org_id,
                 run_id=sb.run_id, ttl_minutes=sb.ttl_minutes)
+            # Ember budget -> a compute-seconds ceiling the agent honors. The
+            # blended rate combines seconds+tokens, but the agent can only act
+            # on time, so we convert the whole Ember budget to a sandbox-second
+            # cap via the per-minute rate (conservative: ignores token share).
+            ember_budget = int(payload.env.get("AGS_EMBER_BUDGET", "0") or 0)
+            per_min = max(0.01, self._settings.ember_per_sandbox_min)
+            budget_seconds = int((ember_budget / per_min) * 60) if ember_budget > 0 else 0
             env = {
                 "GEMINI_API_KEY": self._settings.gemini_api_key,
                 "AGS_REQUIREMENT": payload.env.get("AGS_REQUIREMENT", ""),
@@ -90,6 +98,8 @@ class AzureExecutor:
                 "AGS_RG": sb.rg_name,
                 "AGS_TAGS": "; ".join(f"{k}={v}" for k, v in tags.items()),
                 "AGS_OUTPUTS": payload.env.get("AGS_OUTPUTS", ""),
+                "AGS_BUDGET_SECONDS": str(budget_seconds),
+                "AGS_GRACE_SECONDS": str(self._settings.ember_grace_seconds),
             }
             emit("Launching the agent inside the sandbox (RBAC-scoped)...")
             yield log[-1]
@@ -151,7 +161,9 @@ class AzureExecutor:
             self._result = RunResult(
                 ok=ok, exit_code=0 if ok else 1, log="\n".join(log),
                 files=files, idempotent=done,
-                note=summary or ("verified" if ok else f"incomplete ({state})"))
+                note=summary or ("verified" if ok else f"incomplete ({state})"),
+                sandbox_seconds=int(time.time()) - sb.created_at,
+                llm_tokens=_usage_tokens(transcript))
         except Exception as exc:  # never leave a run unreported
             # Grab whatever the agent printed before it died, so the failure is
             # diagnosable instead of a bare "error" (the RG delete would
@@ -175,7 +187,9 @@ class AzureExecutor:
             emit(f"sandbox error: {type(exc).__name__}: {exc}")
             yield log[-1]
             self._result = RunResult(ok=False, exit_code=1, log="\n".join(log),
-                                     note=f"error: {type(exc).__name__}")
+                                     note=f"error: {type(exc).__name__}",
+                                     sandbox_seconds=int(time.time()) - sb.created_at,
+                                     llm_tokens=_usage_tokens(transcript))
         finally:
             # Teardown is unconditional: the whole RG goes, whatever happened.
             try:
@@ -193,6 +207,19 @@ def _declared_done(text: str) -> bool:
     if "INCOMPLETE" in lines:
         return False
     return "DONE" in lines
+
+
+def _usage_tokens(text: str) -> int:
+    """Total LLM tokens the agent reported via its USAGE_TOKENS line. 0 if the
+    agent crashed before printing it (we still bill for compute seconds)."""
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("USAGE_TOKENS:"):
+            try:
+                return int(line.split(":", 1)[1].strip())
+            except ValueError:
+                return 0
+    return 0
 
 
 def _files_from_log(text: str) -> dict[str, str]:

@@ -112,6 +112,24 @@ async def main():
         assert r.status_code == 200 and r.json()["state"] == "running"
         print("ok    approve flips to running")
 
+        # 5b. Ember gate: a user whose balance is drained cannot approve a run.
+        from app import embers
+        from app.config import load as _load
+        from app.models import Task
+        sub = (await c.get("/api/auth/me")).json()["user"]["sub"]
+        await embers.burn(sub, "drain", await embers.balance(sub, _load()), 1, 1)
+        r = await c.post("/api/tasks", json={"title": "broke", "provider": "azure"})
+        brok_tid = r.json()["id"]
+        async with db.session() as s:
+            t = await s.get(Task, brok_tid); t.state = "planned"; await s.commit()
+        r = await c.post(f"/api/tasks/{brok_tid}/approve")
+        assert r.status_code == 402 and "Embers" in r.json()["detail"], r.text
+        # restore a healthy balance so later approvals in this session still work
+        async with db.session() as s:
+            acct = await s.get(embers.EmberAccount, sub)
+            acct.balance = 10000; await s.commit()
+        print("ok    ember gate: insufficient balance refuses approve (402)")
+
         import app.runner as runner
         runner._TICK_SECONDS = 0  # speed up the simulation
         await runner.run_task(tid)  # run synchronously for the test
