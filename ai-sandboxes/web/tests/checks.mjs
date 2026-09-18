@@ -77,6 +77,7 @@ check('usage: stats row present', usage.includes('data-usage="runs"') && usage.i
 check('usage: gate boots usage.js for signed-in users', usage.includes('/js/usage.js'));
 check('usage: gate redirects anonymous to /login', /location\.replace\(['`]\/login['`]\)/.test(usage));
 check('usage: console nav links Usage', usage.includes('href="/usage"'));
+check('usage: month nav + by-model hooks', usage.includes('data-usage="month-label"') && usage.includes('data-usage="by-model"'));
 
 const usageJs = read('js/usage.js');
 check('asset: usage.js is an IIFE', usageJs.includes('(function () {'));

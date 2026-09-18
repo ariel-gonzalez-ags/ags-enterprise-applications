@@ -135,6 +135,7 @@ class EmberLedger(Base):
     task_id: Mapped[str] = mapped_column(String(36), index=True, default="")
     delta: Mapped[int] = mapped_column(Integer)          # Embers; negative = burn
     reason: Mapped[str] = mapped_column(String(24))      # trial_grant|run_burn|topup
+    model: Mapped[str] = mapped_column(String(40), default="")  # planner/agent model used
     sandbox_seconds: Mapped[int] = mapped_column(Integer, default=0)
     llm_tokens: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[int] = mapped_column(Integer, default=now)

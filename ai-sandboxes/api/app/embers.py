@@ -61,7 +61,7 @@ async def balance(owner_sub: str, settings) -> int:
 
 
 async def burn(owner_sub: str, task_id: str, embers: int,
-               sandbox_seconds: int, llm_tokens: int) -> int:
+               sandbox_seconds: int, llm_tokens: int, model: str = "") -> int:
     """Record a run's burn and decrement the balance. Returns new balance. The
     gate at approve is what prevents overspend; this just records it (a small
     transient negative is possible if the estimate undershot the real burn)."""
@@ -72,8 +72,8 @@ async def burn(owner_sub: str, task_id: str, embers: int,
             s.add(acct)
         acct.balance -= max(0, embers)
         s.add(EmberLedger(owner_sub=owner_sub, task_id=task_id, delta=-max(0, embers),
-                          reason="run_burn", sandbox_seconds=sandbox_seconds,
-                          llm_tokens=llm_tokens))
+                          reason="run_burn", model=model,
+                          sandbox_seconds=sandbox_seconds, llm_tokens=llm_tokens))
         await s.commit()
         return acct.balance
 

@@ -112,6 +112,17 @@ async def get_embers(request: Request, user: dict = Depends(_user)):
             .order_by(EmberLedger.created_at.desc()).limit(100))).scalars().all()
     spent = [r for r in rows if r.delta < 0]
     granted = sum(r.delta for r in rows if r.delta > 0)
+    # Breakdown by planner/agent model for the usage page (which model the
+    # Embers went to). Keyed by model id; empty-string model folds to "unknown".
+    by_model: dict = {}
+    for r in spent:
+        m = by_model.setdefault(r.model or "unknown",
+                                {"embers": 0, "runs": 0, "llm_tokens": 0,
+                                 "sandbox_seconds": 0})
+        m["embers"] += -r.delta
+        m["runs"] += 1
+        m["llm_tokens"] += r.llm_tokens
+        m["sandbox_seconds"] += r.sandbox_seconds
     return {
         "balance": bal,
         "peg_usd": settings.ember_peg_usd,
@@ -123,8 +134,10 @@ async def get_embers(request: Request, user: dict = Depends(_user)):
         "total_sandbox_seconds": sum(r.sandbox_seconds for r in spent),
         "total_llm_tokens": sum(r.llm_tokens for r in spent),
         "runs": len(spent),
+        "by_model": by_model,
         # Per-run history (newest first), one row per burn/grant.
         "recent": [{"delta": r.delta, "reason": r.reason, "task_id": r.task_id,
+                    "model": r.model,
                     "sandbox_seconds": r.sandbox_seconds, "llm_tokens": r.llm_tokens,
                     "at": r.created_at} for r in rows],
     }

@@ -275,7 +275,8 @@ async def _finish_run(task_id: str, files, res, settings) -> None:
         if task is None:
             return
         new_balance = await embers.burn(task.owner_sub, task_id, burn_embers,
-                                        res.sandbox_seconds, res.llm_tokens)
+                                        res.sandbox_seconds, res.llm_tokens,
+                                        model=task.model)
         task.embers_spent = burn_embers
         task.sandbox_seconds = res.sandbox_seconds
         task.llm_tokens = res.llm_tokens

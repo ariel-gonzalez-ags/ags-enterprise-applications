@@ -45,6 +45,12 @@ async def create_schema() -> None:
         ):
             if col not in cols:
                 await conn.execute(text(f"ALTER TABLE tasks ADD COLUMN {col} {ddl}"))
+        # ember_ledger gains a model column for the by-model usage breakdown.
+        ecols = {row[1] for row in (await conn.execute(text("PRAGMA table_info(ember_ledger)"))).all()}
+        if ecols and "model" not in ecols:
+            await conn.execute(
+                text("ALTER TABLE ember_ledger ADD COLUMN model VARCHAR(40) NOT NULL DEFAULT ''")
+            )
 
 
 def session() -> AsyncSession:
