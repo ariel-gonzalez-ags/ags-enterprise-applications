@@ -146,7 +146,13 @@ the user before implementing**. See "Evolution path".
   never loses work silently. Embers are decoupled from real Azure spend on
   purpose (CostEvent reconciles margin internally); this is the industry pattern
   (Copilot credits, Anthropic CCU): never show raw infra cost, meter a logical
-  unit. Stripe top-up + card-gated trial (real anti-multi-account) is Phase 2.
+  unit.   Stripe top-up + card-gated trial (real anti-multi-account) is Phase 2.
+  **`/usage` page.** A minimal usage/showback page (opencode-style: no charts,
+  just numbers). Single-pane shell (ConsoleShell renders one centered column
+  when only the `stage` slot is passed), `UsagePanel.astro` + `usage.js`
+  rendering balance, an allowance progress bar (spent vs granted), aggregate
+  stats, and a per-run history from `/api/embers`. Linked from ConsoleNav; the
+  nav `active` state is path-aware (`Astro.url.pathname`).
 
 ## Directory map
 
@@ -221,9 +227,10 @@ the user before implementing**. See "Evolution path".
    "Brand system" below.
  8. **Client-side JS is an explicit exception, not a pattern.** The sanctioned
    scripts are `public/js/auth.js` (nav auth state), `public/js/console.js`
-   (/app data flow against `/api/tasks*`), the gate script in
-   `pages/app.astro`, and the signed-in bounce in `pages/login.astro`. All
-   are vanilla, IIFE/scoped, and only call `/api/*`.
+   (/app data flow against `/api/tasks*`), `public/js/usage.js` (/usage data
+   flow against `/api/embers`), the gate script in `pages/app.astro`, and the
+   signed-in bounce in `pages/login.astro`. All are vanilla, IIFE/scoped, and
+   only call `/api/*`.
    console.js renders into `data-console="*"` hooks in the component shells;
    **any markup it injects needs `:global()` selectors in the component's
    `<style>`**: Astro scoping doesn't reach runtime DOM. Any further client

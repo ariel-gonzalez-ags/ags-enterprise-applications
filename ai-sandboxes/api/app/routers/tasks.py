@@ -109,10 +109,21 @@ async def get_embers(request: Request, user: dict = Depends(_user)):
     async with db.session() as s:
         rows = (await s.execute(
             select(EmberLedger).where(EmberLedger.owner_sub == user["sub"])
-            .order_by(EmberLedger.created_at.desc()).limit(20))).scalars().all()
+            .order_by(EmberLedger.created_at.desc()).limit(100))).scalars().all()
+    spent = [r for r in rows if r.delta < 0]
+    granted = sum(r.delta for r in rows if r.delta > 0)
     return {
         "balance": bal,
         "peg_usd": settings.ember_peg_usd,
+        "trial_allowance": settings.ember_trial_allowance,
+        # Aggregates for the usage page: lifetime granted / spent, and the
+        # metered quantities behind them (compute seconds, LLM tokens).
+        "total_granted": granted,
+        "total_spent": -sum(r.delta for r in spent),
+        "total_sandbox_seconds": sum(r.sandbox_seconds for r in spent),
+        "total_llm_tokens": sum(r.llm_tokens for r in spent),
+        "runs": len(spent),
+        # Per-run history (newest first), one row per burn/grant.
         "recent": [{"delta": r.delta, "reason": r.reason, "task_id": r.task_id,
                     "sandbox_seconds": r.sandbox_seconds, "llm_tokens": r.llm_tokens,
                     "at": r.created_at} for r in rows],

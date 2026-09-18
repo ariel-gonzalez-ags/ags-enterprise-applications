@@ -1,0 +1,70 @@
+---
+// Usage panel: balance, allowance progress, and a per-run history. Data comes
+// from /api/embers via usage.js (data-usage hooks). Minimal by design: the
+// numbers, no charts. Ember = the cost unit (1 Ember = $0.01).
+import Icon from './Icon.astro';
+---
+<div class="usage" data-usage="root">
+  <p class="eyebrow mono">Usage</p>
+  <h1>What you've consumed</h1>
+  <p class="lede">Every sandbox run burns <strong>Embers</strong> from compute time and
+    model tokens. This is your balance and where it went.</p>
+
+  <div class="bal-card">
+    <div class="bal-top">
+      <div>
+        <div class="bal-num mono"><span data-usage="balance">—</span> <span class="unit">Embers</span></div>
+        <div class="bal-sub" data-usage="usd">—</div>
+      </div>
+      <span class="btn ghost sm soon" data-usage="topup" title="Top-up arrives with billing (soon)">Top up · soon</span>
+    </div>
+    <div class="bar" data-usage="bar"><span class="bar-fill" data-usage="bar-fill"></span></div>
+    <div class="bar-sub mono" data-usage="bar-label">—</div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="stat-num mono" data-usage="runs">—</div><div class="stat-l">Runs</div></div>
+    <div class="stat"><div class="stat-num mono" data-usage="compute">—</div><div class="stat-l">Compute</div></div>
+    <div class="stat"><div class="stat-num mono" data-usage="tokens">—</div><div class="stat-l">Tokens</div></div>
+    <div class="stat"><div class="stat-num mono" data-usage="spent">—</div><div class="stat-l">Spent</div></div>
+  </div>
+
+  <h2 class="hist-h"><Icon name="layers" size={15} /> History</h2>
+  <div class="hist" data-usage="history">
+    <p class="hint">Loading…</p>
+  </div>
+</div>
+
+<style>
+  .usage { max-width: 720px }
+  .eyebrow { font-size: 11px; color: var(--accent); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 10px }
+  h1 { font-size: 26px; font-weight: 600; letter-spacing: -.02em; margin-bottom: 8px }
+  .lede { font-size: 14px; color: var(--muted); line-height: 1.6; margin-bottom: 26px; max-width: 56ch }
+
+  .bal-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px 24px; margin-bottom: 18px }
+  .bal-top { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 16px }
+  .bal-num { font-size: 34px; font-weight: 600; color: var(--accent); letter-spacing: -.02em }
+  .bal-num .unit { font-size: 14px; color: var(--muted); font-weight: 400 }
+  .bal-sub { font-size: 12px; color: var(--muted2); margin-top: 3px }
+  .soon { opacity: .5; cursor: default }
+  .bar { height: 6px; background: var(--line); border-radius: 99px; overflow: hidden }
+  .bar-fill { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 99px; transition: width .4s }
+  .bar-sub { font-size: 11.5px; color: var(--muted2); margin-top: 8px }
+
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 30px }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px }
+  .stat-num { font-size: 20px; font-weight: 600; color: var(--text) }
+  .stat-l { font-size: 11.5px; color: var(--muted2); margin-top: 3px }
+
+  .hist-h { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--muted); margin-bottom: 12px }
+  .hist { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden }
+  .hist .hint { padding: 18px; font-size: 13px; color: var(--muted2) }
+  .hist :global(.hrow) { display: flex; align-items: center; gap: 14px; padding: 11px 16px; border-top: 1px solid var(--line); font-size: 13px }
+  .hist :global(.hrow:first-child) { border-top: none }
+  .hist :global(.hrow .h-delta) { font-weight: 600; min-width: 64px; text-align: right }
+  .hist :global(.hrow .h-delta.neg) { color: var(--text) }
+  .hist :global(.hrow .h-delta.pos) { color: var(--accent) }
+  .hist :global(.hrow .h-what) { flex: 1; color: var(--muted) }
+  .hist :global(.hrow .h-meta) { color: var(--muted2); font-size: 11.5px }
+  .hist :global(.hrow .h-when) { color: var(--muted2); font-size: 11.5px; min-width: 70px; text-align: right }
+</style>

@@ -70,6 +70,19 @@ check('login: brand mark present', login.includes('login-brand'));
 check('login: Google OAuth CTA', /\/api\/auth\/login\?next=\/app/.test(login));
 check('login: signed-in bounce to /app', /location\.replace\(['`]\/app['`]\)/.test(login));
 
+const usage = read('usage/index.html');
+check('usage: single-pane shell (no three-pane grid)', !usage.includes('data-console="task-list"'));
+check('usage: balance + history hooks present', usage.includes('data-usage="balance"') && usage.includes('data-usage="history"'));
+check('usage: stats row present', usage.includes('data-usage="runs"') && usage.includes('data-usage="tokens"') && usage.includes('data-usage="spent"'));
+check('usage: gate boots usage.js for signed-in users', usage.includes('/js/usage.js'));
+check('usage: gate redirects anonymous to /login', /location\.replace\(['`]\/login['`]\)/.test(usage));
+check('usage: console nav links Usage', usage.includes('href="/usage"'));
+
+const usageJs = read('js/usage.js');
+check('asset: usage.js is an IIFE', usageJs.includes('(function () {'));
+check('asset: usage.js calls embers API', usageJs.includes('/api/embers'));
+check('asset: usage.js renders text not untrusted html', usageJs.includes('textContent'));
+
 const consoleJs = read('js/console.js');
 check('asset: console.js is an IIFE', consoleJs.includes('(function () {'));
 check('asset: console.js calls tasks API', consoleJs.includes('/api/tasks'));

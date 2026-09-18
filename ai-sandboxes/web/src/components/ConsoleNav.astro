@@ -3,6 +3,7 @@
 // search, artifact library shortcut, user. No landing-page anchors.
 import Logo from './Logo.astro';
 import Icon from './Icon.astro';
+const path = Astro.url.pathname;
 ---
 <header class="cnav">
   <div class="cnav-in">
@@ -15,7 +16,8 @@ import Icon from './Icon.astro';
     </div>
 
     <nav class="cnav-links">
-      <a href="/app" class="active"><Icon name="folder" size={14} /> Tasks</a>
+      <a href="/app" class={path.startsWith('/app') ? 'active' : ''}><Icon name="folder" size={14} /> Tasks</a>
+      <a href="/usage" class={path.startsWith('/usage') ? 'active' : ''}><Icon name="clock" size={14} /> Usage</a>
     </nav>
 
     <div class="cnav-user" data-auth="user" data-auth-menu></div>
