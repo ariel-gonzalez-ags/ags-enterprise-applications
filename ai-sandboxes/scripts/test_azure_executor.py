@@ -236,7 +236,7 @@ def test_context_helpers():
 async def test_compact_shrinks_history():
     from app.executors.azure_exec import agent
     _settings(); os.environ["GEMINI_API_KEY"] = "k"
-    s = load()
+    load()
     # a long history that should compact down to system+user+brief+tail
     msgs = [{"role": "system", "content": "sys"}, {"role": "user", "content": "task"}]
     for i in range(12):
