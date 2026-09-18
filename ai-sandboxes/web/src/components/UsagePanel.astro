@@ -1,22 +1,22 @@
 ---
 // Usage panel: balance, allowance progress, and a per-run history. Data comes
-// from /api/embers via usage.js (data-usage hooks). Minimal by design: the
-// numbers, no charts. Ember = the cost unit (1 Ember = $0.01).
+// from /api/embers via usage.js (data-usage hooks). Copy lives in
+// content/usage.js (rule 2). Ember = the cost unit (1 Ember = $0.01).
 import Icon from './Icon.astro';
+import { usage as t } from '../content/usage.js';
 ---
 <div class="usage" data-usage="root">
-  <p class="eyebrow mono">Usage</p>
-  <h1>What you've consumed</h1>
-  <p class="lede">Every sandbox run burns <strong>Embers</strong> from compute time and
-    model tokens. This is your balance and where it went.</p>
+  <p class="eyebrow mono">{t.eyebrow}</p>
+  <h1>{t.title}</h1>
+  <p class="lede">{t.ledePre} <strong>{t.ledeUnit}</strong> {t.ledePost}</p>
 
   <div class="bal-card">
     <div class="bal-top">
       <div>
-        <div class="bal-num mono"><span data-usage="balance">—</span> <span class="unit">Embers</span></div>
+        <div class="bal-num mono"><span data-usage="balance">—</span> <span class="unit">{t.unit}</span></div>
         <div class="bal-sub" data-usage="usd">—</div>
       </div>
-      <span class="btn ghost sm soon" data-usage="topup" title="Top-up arrives with billing (soon)">Top up · soon</span>
+      <span class="btn ghost sm soon" data-usage="topup" title={t.topupTitle}>{t.topup}</span>
     </div>
     <div class="bar" data-usage="bar"><span class="bar-fill" data-usage="bar-fill"></span></div>
     <div class="bar-sub mono" data-usage="bar-label">—</div>
@@ -24,25 +24,25 @@ import Icon from './Icon.astro';
 
   <div class="usage-nav">
     <button class="mn mono" data-usage="prev" type="button" aria-label="Previous month">‹</button>
-    <span class="mn-label mono" data-usage="month-label">All time</span>
+    <span class="mn-label mono" data-usage="month-label">{t.allTime}</span>
     <button class="mn mono" data-usage="next" type="button" aria-label="Next month">›</button>
   </div>
 
   <div class="stats">
-    <div class="stat"><div class="stat-num mono" data-usage="runs">—</div><div class="stat-l">Runs</div></div>
-    <div class="stat"><div class="stat-num mono" data-usage="compute">—</div><div class="stat-l">Compute</div></div>
-    <div class="stat"><div class="stat-num mono" data-usage="tokens">—</div><div class="stat-l">Tokens</div></div>
-    <div class="stat"><div class="stat-num mono" data-usage="spent">—</div><div class="stat-l">Spent</div></div>
+    <div class="stat"><div class="stat-num mono" data-usage="runs">—</div><div class="stat-l">{t.stats.runs}</div></div>
+    <div class="stat"><div class="stat-num mono" data-usage="compute">—</div><div class="stat-l">{t.stats.compute}</div></div>
+    <div class="stat"><div class="stat-num mono" data-usage="tokens">—</div><div class="stat-l">{t.stats.tokens}</div></div>
+    <div class="stat"><div class="stat-num mono" data-usage="spent">—</div><div class="stat-l">{t.stats.spent}</div></div>
   </div>
 
-  <h2 class="hist-h"><Icon name="layers" size={15} /> By model</h2>
+  <h2 class="hist-h"><Icon name="layers" size={15} /> {t.byModel}</h2>
   <div class="hist" data-usage="by-model">
     <p class="hint">—</p>
   </div>
 
-  <h2 class="hist-h"><Icon name="layers" size={15} /> History</h2>
+  <h2 class="hist-h"><Icon name="layers" size={15} /> {t.history}</h2>
   <div class="hist" data-usage="history">
-    <p class="hint">Loading…</p>
+    <p class="hint">—</p>
   </div>
 </div>
 

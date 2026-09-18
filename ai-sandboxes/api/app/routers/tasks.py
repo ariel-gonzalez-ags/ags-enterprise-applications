@@ -9,21 +9,19 @@ from sqlalchemy import select
 
 from .. import db, embers, events, planner, runner
 from ..config import Settings
-from ..models import Artifact, EmberLedger, Message, Task
-from ..session import get_session
+from ..models import Artifact, Message, Task
+from ._common import require_user, settings_of
 
 router = APIRouter()
 
-
+# Backwards-compatible aliases: the route handlers below still reference
+# _settings/_user; they delegate to the shared helpers in _common.
 def _settings(request: Request) -> Settings:
-    return request.app.state.settings
+    return settings_of(request)
 
 
 def _user(request: Request) -> dict:
-    user = get_session(request, _settings(request))
-    if not user:
-        raise HTTPException(401, "not authenticated")
-    return user
+    return require_user(request)
 
 
 def _task_json(t: Task, detail: bool = False) -> dict:
@@ -90,57 +88,6 @@ class CreateTask(BaseModel):
     title: str = Field(default="Untitled task", max_length=200)
     provider: str = Field(default="azure", max_length=16)
     model: str | None = Field(default=None, max_length=40)
-
-
-@router.get("/models")
-async def list_models(user: dict = Depends(_user)):
-    """Planner models the user can pick from. Data-driven; the source of
-    truth is planner.MODELS."""
-    return {"models": planner.MODELS}
-
-
-@router.get("/embers")
-async def get_embers(request: Request, user: dict = Depends(_user)):
-    """The caller's Ember balance and recent ledger. Embers are the cost meter:
-    1 Ember = $0.01. Trial is granted on first call; top-up comes with Stripe
-    (Phase 2)."""
-    settings = _settings(request)
-    bal = await embers.balance(user["sub"], settings)
-    async with db.session() as s:
-        rows = (await s.execute(
-            select(EmberLedger).where(EmberLedger.owner_sub == user["sub"])
-            .order_by(EmberLedger.created_at.desc()).limit(100))).scalars().all()
-    spent = [r for r in rows if r.delta < 0]
-    granted = sum(r.delta for r in rows if r.delta > 0)
-    # Breakdown by planner/agent model for the usage page (which model the
-    # Embers went to). Keyed by model id; empty-string model folds to "unknown".
-    by_model: dict = {}
-    for r in spent:
-        m = by_model.setdefault(r.model or "unknown",
-                                {"embers": 0, "runs": 0, "llm_tokens": 0,
-                                 "sandbox_seconds": 0})
-        m["embers"] += -r.delta
-        m["runs"] += 1
-        m["llm_tokens"] += r.llm_tokens
-        m["sandbox_seconds"] += r.sandbox_seconds
-    return {
-        "balance": bal,
-        "peg_usd": settings.ember_peg_usd,
-        "trial_allowance": settings.ember_trial_allowance,
-        # Aggregates for the usage page: lifetime granted / spent, and the
-        # metered quantities behind them (compute seconds, LLM tokens).
-        "total_granted": granted,
-        "total_spent": -sum(r.delta for r in spent),
-        "total_sandbox_seconds": sum(r.sandbox_seconds for r in spent),
-        "total_llm_tokens": sum(r.llm_tokens for r in spent),
-        "runs": len(spent),
-        "by_model": by_model,
-        # Per-run history (newest first), one row per burn/grant.
-        "recent": [{"delta": r.delta, "reason": r.reason, "task_id": r.task_id,
-                    "model": r.model,
-                    "sandbox_seconds": r.sandbox_seconds, "llm_tokens": r.llm_tokens,
-                    "at": r.created_at} for r in rows],
-    }
 
 
 @router.post("/tasks", status_code=201)

@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import db
 from .config import load
-from .routers import auth, tasks
+from .routers import auth, meta, tasks
 
 
 def create_app() -> FastAPI:
@@ -49,6 +49,7 @@ def create_app() -> FastAPI:
 
     app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
     app.include_router(tasks.router, prefix="/api", tags=["tasks"])
+    app.include_router(meta.router, prefix="/api", tags=["meta"])
     return app
 
 
