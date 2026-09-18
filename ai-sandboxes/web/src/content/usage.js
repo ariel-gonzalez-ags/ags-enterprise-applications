@@ -10,8 +10,8 @@ export const usage = {
   ledePost: 'from compute time and model tokens. This is your balance and where it went.',
   unit: 'Embers',
   // Top-up (Stripe). The panel maps over `packs`; custom amount has a $ minimum.
-  topupTitle: 'Add Embers',
-  topupNote: 'Embers never expire. 1 Ember = $0.01. Secure checkout by Stripe; we never see your card.',
+  topupTitle: 'Buy Embers',
+  topupNote: 'A purchase, separate from the free trial. Embers never expire. 1 Ember = $0.01. Secure checkout by Stripe; we never see your card.',
   topupCustomLabel: 'Custom amount (USD)',
   topupCustomPlaceholder: '25',
   topupGo: 'Continue to checkout',

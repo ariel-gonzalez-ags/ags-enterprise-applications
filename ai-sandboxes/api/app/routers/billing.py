@@ -62,8 +62,8 @@ async def card_setup(request: Request, user: dict = Depends(require_user)):
     base = settings.base_url
     url = await billing.create_card_setup_checkout(
         user["sub"], user.get("email", ""), settings,
-        success_url=f"{base}/app/?card=saved",
-        cancel_url=f"{base}/app/?card=cancelled")
+        success_url=f"{base}/usage/?card=saved",
+        cancel_url=f"{base}/usage/?card=cancelled")
     return {"checkout_url": url}
 
 

@@ -223,17 +223,33 @@
     render();
   });
 
-  fetch('/api/embers', { credentials: 'same-origin' })
-    .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
-    .then(function (data) { DATA = data; render(); })
-    .catch(function () {
-      if (histEl) { histEl.innerHTML = ''; histEl.appendChild(empty('Could not load usage. Try refreshing.')); }
-    });
+  function loadBilling() {
+    return fetch('/api/billing/config', { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+      .then(function (cfg) { BILLING = cfg; renderBilling(); })
+      .catch(function () { /* billing hidden */ });
+  }
 
-  // Billing config drives the card gate + top-up card. Independent of the
-  // embers fetch; if it fails we simply leave both panels hidden.
-  fetch('/api/billing/config', { credentials: 'same-origin' })
-    .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
-    .then(function (cfg) { BILLING = cfg; renderBilling(); })
-    .catch(function () { /* billing hidden */ });
+  function loadEmbers() {
+    return fetch('/api/embers', { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+      .then(function (data) { DATA = data; render(); })
+      .catch(function () {
+        if (histEl) { histEl.innerHTML = ''; histEl.appendChild(empty('Could not load usage. Try refreshing.')); }
+      });
+  }
+
+  // Returning from Stripe (card saved / top-up paid) lands us back here with a
+  // query param. The webhook may still be in flight, so re-fetch a couple of
+  // times to catch the credited balance / flipped card flag, then clean the URL.
+  var ret = new URLSearchParams(window.location.search);
+  var returnedFromStripe = ret.has('card') || ret.has('topup');
+  loadEmbers();
+  loadBilling();
+  if (returnedFromStripe) {
+    [1200, 3000].forEach(function (ms) {
+      setTimeout(function () { loadEmbers(); loadBilling(); }, ms);
+    });
+    window.history.replaceState({}, '', window.location.pathname);
+  }
 })();
