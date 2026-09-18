@@ -278,9 +278,9 @@ async def test_embers():
     ok, bal, _ = await embers.can_afford("user-a", s)
     assert ok is False and bal == 0
     # usage tokens parsed from a transcript
-    from app.executors.azure_exec import executor
-    assert executor._usage_tokens("line\nUSAGE_TOKENS: 4321\n") == 4321
-    assert executor._usage_tokens("no usage here") == 0
+    from app.executors.azure_exec import transcript
+    assert transcript.usage_tokens("line\nUSAGE_TOKENS: 4321\n") == 4321
+    assert transcript.usage_tokens("no usage here") == 0
     print("ok    embers: rate, trial grant, afford gate, burn, usage parse")
 
 

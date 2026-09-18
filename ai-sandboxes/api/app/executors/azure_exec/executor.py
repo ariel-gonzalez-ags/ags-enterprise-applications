@@ -17,6 +17,7 @@ from typing import AsyncIterator
 
 from ..base import RunPayload, RunResult
 from . import agent_runner, lifecycle, tags as tagger
+from . import transcript as transcript_log
 from .credentials import clients
 
 # Agent container base. Microsoft Container Registry (MCR), NOT Docker Hub:
@@ -174,9 +175,9 @@ class AzureExecutor:
                 emit(line)
                 yield line
 
-            done = _declared_done(transcript)
-            files = _files_from_log(transcript)
-            summary = _summary_from_log(transcript)
+            done = transcript_log.declared_done(transcript)
+            files = transcript_log.files_from_log(transcript)
+            summary = transcript_log.summary_from_log(transcript)
             # Verification requires the agent to have actually produced every
             # requested deliverable. A declared-done with a missing/empty
             # deliverable is NOT verified: it means the agent built the
@@ -197,7 +198,7 @@ class AzureExecutor:
                 files=files, idempotent=done,
                 note=note,
                 sandbox_seconds=int(time.time()) - sb.created_at,
-                llm_tokens=_usage_tokens(transcript))
+                llm_tokens=transcript_log.usage_tokens(transcript))
         except Exception as exc:  # never leave a run unreported
             # Grab whatever the agent printed before it died, so the failure is
             # diagnosable instead of a bare "error" (the RG delete would
@@ -223,7 +224,7 @@ class AzureExecutor:
             self._result = RunResult(ok=False, exit_code=1, log="\n".join(log),
                                      note=f"error: {type(exc).__name__}",
                                      sandbox_seconds=int(time.time()) - sb.created_at,
-                                     llm_tokens=_usage_tokens(transcript))
+                                     llm_tokens=transcript_log.usage_tokens(transcript))
         finally:
             # Teardown is unconditional: the whole RG goes, whatever happened.
             # If abort() already tore it down this is a cheap no-op (idempotent).
@@ -255,48 +256,3 @@ class AzureExecutor:
                 emit(f"WARNING: teardown needs attention")
             finally:
                 self._sb = None  # run is over; drop the abort handle
-
-
-def _declared_done(text: str) -> bool:
-    """True only on a standalone DONE line. INCOMPLETE (the failure signal)
-    always wins, and 'DONE' must not match inside 'INCOMPLETE'."""
-    lines = [l.strip() for l in text.splitlines()]
-    if "INCOMPLETE" in lines:
-        return False
-    return "DONE" in lines
-
-
-def _usage_tokens(text: str) -> int:
-    """Total LLM tokens the agent reported via its USAGE_TOKENS line. 0 if the
-    agent crashed before printing it (we still bill for compute seconds)."""
-    for line in text.splitlines():
-        line = line.strip()
-        if line.startswith("USAGE_TOKENS:"):
-            try:
-                return int(line.split(":", 1)[1].strip())
-            except ValueError:
-                return 0
-    return 0
-
-
-def _files_from_log(text: str) -> dict[str, str]:
-    out: dict[str, str] = {}
-    current = None
-    buf: list[str] = []
-    for line in text.splitlines():
-        if line.startswith("===AGS-FILE-BEGIN:"):
-            current, buf = line.split(":", 1)[1].strip(), []
-        elif line.startswith("===AGS-FILE-END:"):
-            if current is not None:
-                out[current] = "\n".join(buf) + ("\n" if buf else "")
-            current, buf = None, []
-        elif current is not None:
-            buf.append(line)
-    return out
-
-
-def _summary_from_log(text: str) -> str:
-    for line in text.splitlines():
-        if line.startswith("SUMMARY: "):
-            return line[len("SUMMARY: "):].strip()
-    return ""
