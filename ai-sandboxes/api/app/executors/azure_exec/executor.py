@@ -247,12 +247,17 @@ class AzureExecutor:
             except (GeneratorExit, RuntimeError):
                 # Being closed: cannot await. Tear down synchronously off-thread
                 # so the RG does not leak even when the generator is interrupted.
+                # The abort() background thread is the primary teardown; this is
+                # the last-resort backstop, so a failure here is logged (not
+                # raised: raising during GeneratorExit would kill the close) and
+                # the run.log transcript still carries it for diagnosis.
                 try:
                     await asyncio.get_event_loop().run_in_executor(
                         None, lifecycle.teardown, az, self._settings, sb)
-                except Exception:
-                    pass
-            except Exception:
-                emit(f"WARNING: teardown needs attention")
+                except Exception as teardown_exc:
+                    emit("WARNING: last-resort teardown during generator close "
+                         f"failed: {type(teardown_exc).__name__}: {teardown_exc}")
+            except Exception as exc:
+                emit(f"WARNING: teardown needs attention: {type(exc).__name__}: {exc}")
             finally:
                 self._sb = None  # run is over; drop the abort handle
