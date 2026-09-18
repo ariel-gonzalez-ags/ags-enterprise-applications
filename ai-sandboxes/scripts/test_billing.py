@@ -23,7 +23,6 @@ os.environ["SESSION_SECRET"] = "x"
 
 from app.config import load          # noqa: E402
 from app import billing, db, embers  # noqa: E402
-from app.models import EmberAccount  # noqa: E402
 
 
 def _settings(**over):
@@ -60,7 +59,8 @@ async def test_topup_checkout_metadata():
                     return_value=_fake_session()) as create:
         url = await billing.create_topup_checkout(
             "u2", "u2@x.com", 25.0, s, "http://x/ok", "http://x/no")
-    assert url.startswith("https://checkout.stripe.com")
+    from urllib.parse import urlparse
+    assert urlparse(url).hostname == "checkout.stripe.com", url  # Stripe-hosted page
     kw = create.call_args.kwargs
     assert kw["mode"] == "payment"
     # $25 at $0.01/Ember -> 2500 Embers, carried in metadata for the webhook

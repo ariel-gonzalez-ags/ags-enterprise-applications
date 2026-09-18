@@ -5,7 +5,7 @@ credit itself)."""
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from .. import billing, embers
+from .. import billing
 from ._common import require_user, settings_of
 
 router = APIRouter()
