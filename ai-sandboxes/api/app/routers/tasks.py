@@ -127,10 +127,14 @@ async def download_artifact(task_id: str, filename: str, user: dict = Depends(_u
         t = await s.get(Task, task_id)
         if t is None or t.owner_sub != user["sub"]:
             raise HTTPException(404, "task not found")
+        # A task re-run used to pile up same-filename artifacts; the runner now
+        # clears them per run, but serve the LATEST (highest id) as a safety net
+        # for any pre-existing duplicates instead of crashing on them.
         result = await s.execute(
             select(Artifact).where(Artifact.task_id == task_id,
-                                   Artifact.filename == filename))
-        a = result.scalar_one_or_none()
+                                   Artifact.filename == filename)
+                            .order_by(Artifact.id.desc()))
+        a = result.scalars().first()
         if a is None:
             raise HTTPException(404, "artifact not found")
         headers = {

@@ -162,6 +162,12 @@ async def _run_real(task_id: str, settings) -> None:
         task = await s.get(Task, task_id)
         if task is None or task.state != "running":
             return
+        # A new run supersedes the previous run's artifacts. Clear them so a
+        # re-run doesn't pile up duplicate-filename artifacts (16 run.log rows
+        # on one task), which both clutters the panel and broke the viewer
+        # (the by-filename endpoint crashed on MultipleResultsFound).
+        from sqlalchemy import delete
+        await s.execute(delete(Artifact).where(Artifact.task_id == task_id))
         formats = list(task.formats or []) or ["markdown"]
         # resolve every accepted format to a (filename, format) pair; custom
         # formats resolve too (the executor's agent produces these as files)
