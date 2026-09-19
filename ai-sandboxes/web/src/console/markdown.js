@@ -1,0 +1,23 @@
+/* console/markdown.js: render the planner's markdown reply to safe HTML.
+ *
+ * The planner writes rich CommonMark (headers, bold, tables, nested lists,
+ * fenced code). Rendering uses marked (full CommonMark -> HTML) + DOMPurify
+ * (sanitize, so no raw HTML/XSS in the model's text survives). Both are
+ * vendored npm deps bundled by the Astro build (no runtime CDN). This replaced
+ * a hand-rolled subset renderer that missed tables and would keep breaking on
+ * every new element the model emitted.
+ */
+
+import { marked } from 'marked';
+import DOMPurify from 'dompurify';
+
+marked.setOptions({
+  gfm: true,        // tables, strikethrough, task lists
+  breaks: false,    // keep markdown paragraph semantics
+});
+
+export function renderMarkdown(src) {
+  var html = marked.parse(String(src == null ? '' : src));
+  // Sanitize: strip any script/inline-handler/dangerous HTML the model emitted.
+  return DOMPurify.sanitize(html, { USE_PROFILES: { html: true } });
+}

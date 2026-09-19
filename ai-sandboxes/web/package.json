@@ -11,6 +11,8 @@
     "test": "node tests/checks.mjs"
   },
   "dependencies": {
-    "astro": "^7.3.2"
+    "astro": "^7.3.2",
+    "dompurify": "^3.4.15",
+    "marked": "^15.0.12"
   }
 }

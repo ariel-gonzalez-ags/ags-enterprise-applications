@@ -5,6 +5,7 @@
  */
 import { S, dom, CHECK_SVG, PLUS_SVG, formatLabel, formatKind, esc, api, on} from './state.js';
 import { renderAll, refreshList, select } from './dataflow.js';
+import { renderMarkdown } from './markdown.js';
 
 /* ---------- thread ---------- */
 
@@ -70,7 +71,11 @@ export function renderThread() {
     // The newest agent reply types out (see below): render its body empty
     // and let the typewriter fill it, so SSE re-renders do not fight it.
     var isNewestAgent = m.role === 'agent' && i === S.selected.messages.length - 1;
-    var body = (isNewestAgent && shouldType(m)) ? '' : esc(m.text);
+    // Agent replies are markdown: render to safe HTML (escaped first, then a
+    // small markdown transform). User text stays escaped plain text.
+    var body = (isNewestAgent && shouldType(m))
+      ? ''
+      : (m.role === 'agent' ? renderMarkdown(m.text) : esc(m.text));
     return '<div class="msg ' + m.role + '"' + (isNewestAgent ? ' data-console="latest-agent"' : '') + '>' + tag +
       '<div class="msg-body">' + body + '</div>' + card + '</div>';
   }).join('');
@@ -103,13 +108,18 @@ function startTyping() {
   if (S.typeTimer) { clearInterval(S.typeTimer); S.typeTimer = null; }
   var i = 0;
   var step = Math.max(2, Math.round(full.length / 50));  // ~50 frames, ~0.8s
+  // Type as plain text (typing raw markdown mid-stream would show half-formed
+  // `**`/```), then swap to the rendered markdown the moment it completes.
+  el.classList.add('md-typing');
   S.typeTimer = setInterval(function () {
     // If a re-render replaced the node, stop; the next render shows it full.
     if (!el.isConnected) { clearInterval(S.typeTimer); S.typeTimer = null; return; }
     i += step;
     if (i >= full.length) {
-      el.textContent = full;
+      el.classList.remove('md-typing');
+      el.innerHTML = renderMarkdown(full);
       clearInterval(S.typeTimer); S.typeTimer = null;
+      dom.thread.scrollTop = dom.thread.scrollHeight;
       return;
     }
     el.textContent = full.slice(0, i);

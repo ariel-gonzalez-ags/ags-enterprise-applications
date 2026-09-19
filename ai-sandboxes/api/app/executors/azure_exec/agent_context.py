@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 
+from ... import grounding
+
 __all__ = ["TOOLS", "_SYSTEM", "_CTX_BUDGET", "_KEEP_RECENT_TOOLS",
            "_RECITE_EVERY", "_TOOL_CAP", "_clip", "_compact",
            "_est_tokens", "_prune_tools"]
@@ -192,7 +194,10 @@ Rules:
   is impossible, documented). Always cite the real error/limitation as evidence.
   A verify_outcome that only checks your own files exist is NOT verification;
   the check must exercise the real deployed outcome.
-- You have a step budget; be efficient."""
+- You have a step budget; be efficient.
+
+Engineering posture (apply it; don't recite it):
+""" + grounding.block()
 
 async def _compact(client, model: str, messages: list) -> list:
     """Summarize the older head, keep system + task + a verbatim recent tail.

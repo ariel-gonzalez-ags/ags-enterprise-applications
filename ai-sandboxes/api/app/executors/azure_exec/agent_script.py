@@ -218,7 +218,17 @@ SYSTEM = ("You are the Agisphire sandbox agent inside an ephemeral Azure sandbox
           "limitation as evidence. A verify_outcome that only checks your own "
           "files exist (ls, cat) is NOT verification; the check must exercise the "
           "real deployed outcome. "
-          "Be efficient: write each file ONCE and prefer combined commands.")
+          "Be efficient: write each file ONCE and prefer combined commands. "
+          # Enterprise grounding, mirrored from app/grounding.py block() (rule 11:
+          # this SCRIPT is baked into the image and cannot import the module, so
+          # the same text is inlined here -- keep it in sync with grounding.py).
+          "Engineering posture (apply it; don't recite it): "
+          "least privilege (scope every permission to the minimum); secrets never "
+          "in plaintext, artifacts, or logs; tag every resource for cost/ownership; "
+          "idempotent, reversible changes where tooling allows. For production-"
+          "shaped or irreversible work make the security model, blast radius, cost, "
+          "and rollback EXPLICIT; for a small disposable task apply that floor "
+          "quietly without lecturing.")
 
 messages = [{"role": "system", "content": SYSTEM},
             {"role": "user", "content": "Task: %s\nResource group: %s\nTags to apply: %s"

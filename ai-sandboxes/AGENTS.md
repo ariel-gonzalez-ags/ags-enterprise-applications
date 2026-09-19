@@ -317,8 +317,8 @@ the user before implementing**. See "Evolution path".
    scripts are `public/js/auth.js` (nav auth state), the /app console under
    `src/console/` (data flow against `/api/tasks*`), `public/js/usage.js`
    (/usage data flow against `/api/embers`), the gate script in
-   `pages/app.astro`, and the signed-in bounce in `pages/login.astro`. All are
-   vanilla and only call `/api/*`.
+   `pages/app.astro`, and the signed-in bounce in `pages/login.astro`. All only
+   call `/api/*`.
    The console outgrew a single file (console.js hit ~950 lines), so it is split
    into ES modules under `src/console/` and **bundled by the Astro/Vite build**
    (the same build the rest of the site already uses). The /app gate in
@@ -338,8 +338,20 @@ the user before implementing**. See "Evolution path".
    `public/js/`; only the console moved under the bundler.)
    The console renders into `data-console="*"` hooks in the component shells;
    **any markup it injects needs `:global()` selectors in the component's
-   `<style>`**: Astro scoping doesn't reach runtime DOM. Any further client
-   JS needs the user's sign-off.
+   `<style>`**: Astro scoping doesn't reach runtime DOM.
+   **Libraries: prefer the industry-standard one over hand-rolling.** The
+   original "vanilla JS only" stance was for a static marketing site that
+   shipped zero JS; the console is a real app now, and reinventing a solved
+   problem (a hand-rolled markdown renderer missed tables and would keep
+   breaking) is worse than a dependency. So a focused, battle-tested library IS
+   allowed when it beats a hand-rolled equivalent, provided it is: (a) a
+   `dependencies` entry bundled by the Astro/Vite build (never a runtime CDN
+   `<script src>`), and (b) logged here. Currently sanctioned:
+   `marked` + `dompurify` (planner-reply markdown rendering + sanitization in
+   `console/markdown.js`). Hand-rolled is still fine for genuinely trivial
+   logic; the bar is "don't reinvent a library that already does this well."
+   Any new client JS *surface* (a new page/feature, not a library inside an
+   existing one) still needs the user's sign-off.
 9. **Backend rules (api/):** routes under `routers/` (one file per domain),
    config only via `config.py`, sessions only via `session.py`. FastAPI docs
    endpoints stay disabled (`docs_url=None`). Cookie values must be
@@ -438,7 +450,7 @@ HTTP request. Don't reintroduce synchronous planner calls. The bus is
 single-node (one dict of asyncio queues); a multi-node swap means replacing
 it with Redis pub/sub behind the same interface.
 
-**The planner sees the task's current settings.** `planner.reply(settings,
+**The planner sees the task's current settings.** `planner.reply_live(settings,
 history, state, model)` injects a context message with the accepted deliverables,
 target cloud, and idempotent/destroy/max-hours values, so re-planning
 respects the plan-card toggles instead of reverting to a prior plan. The
@@ -481,6 +493,19 @@ buffer the whole reply (no incremental token stream), so `console.js`
 reveals the newest agent reply progressively (faux-typing) after it lands.
 The effect is independent of which model produced the text; the plan card
 pops in once the text finishes (structured JSON cannot render half-formed).
+
+**The planner is two-phase (`planner.reply_live`), not single-shot.** Measured:
+Gemini 3.x buffers ~5.5s then bursts all stream chunks at once, so real SSE
+token-streaming feels identical to a single call (do not build it). Instead
+`reply_live` splits the work: phase 1 is a FAST plain-text conversational call
+(`_CHAT_SYSTEM`, no JSON contract, 4k cap) so the reply lands ~4.5s and the
+client typewriter starts sooner; phase 2 is a separate structured call that
+extracts `{title, plan}` (the plan card decouples from the reply). The phase-1
+text is authoritative (the phase-2 `reply` field is overwritten with it).
+`_plan_in_background` calls `reply_live`; `reply()` (single-shot) is kept for
+compat, and tests mock `reply_live`. Persona/grounding live in `_SYSTEM` /
+`_CHAT_SYSTEM` + the shared `app/grounding.py` block (rule 11: also inlined in
+`agent_script.SCRIPT` since the image cannot import the module).
 
 **Plan-card UI conventions in console.js.** Two things that are easy to get
 wrong: (1) the New-task target-cloud highlight is driven only by the stored

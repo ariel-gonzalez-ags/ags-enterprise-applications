@@ -266,7 +266,7 @@ async def _plan_in_background(task_id: str, settings: Settings) -> None:
         }
 
     try:
-        out = await planner.reply(settings, history, state, model)
+        out = await planner.reply_live(settings, history, state, model)
         reply_text, title, plan = out["reply"], out["title"], out["plan"]
     except planner.PlannerUnavailable:
         reply_text, title, plan = (
