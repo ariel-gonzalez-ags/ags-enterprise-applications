@@ -30,17 +30,23 @@ sys.path.insert(0, "api")
 import httpx
 from httpx import ASGITransport, AsyncClient
 
+# Google OAuth endpoints are matched by PARSED HOSTNAME, never by substring: a
+# substring check would let "https://evil.com/?q=oauth2.googleapis.com" pass.
+# (CodeQL py/incomplete-url-substring-sanitization.)
+def _is_host(url, host):
+    return urlparse(str(url)).hostname == host
+
 _real_post = httpx.AsyncClient.post
 _real_get = httpx.AsyncClient.get
 
 async def fake_post(self, url, data=None, **kw):
-    if urlparse(str(url)).hostname != "oauth2.googleapis.com":
+    if not _is_host(url, "oauth2.googleapis.com"):
         return await _real_post(self, url, data=data, **kw)
     assert data["code_verifier"], "PKCE verifier must be sent"
     return FakeResponse(200, {"access_token": "fake-token"})
 
 async def fake_get(self, url, headers=None, **kw):
-    if urlparse(str(url)).hostname != "openidconnect.googleapis.com":
+    if not _is_host(url, "openidconnect.googleapis.com"):
         return await _real_get(self, url, headers=headers, **kw)
     assert headers["Authorization"] == "Bearer fake-token"
     return FakeResponse(200, GOOGLE_USER)
@@ -64,8 +70,7 @@ with mock.patch("httpx.AsyncClient.post", fake_post), \
             r = await c.get("/api/auth/login?next=/app")
             assert r.status_code in (302, 307), f"login: {r.status_code}"
             loc = r.headers["location"]
-            loc_host = urlparse(loc).hostname
-            assert loc_host == "accounts.google.com" and "code_challenge=" in loc, loc
+            assert _is_host(loc, "accounts.google.com") and "code_challenge=" in loc, loc
             state_cookie = r.cookies.get("ags_oauth_state")
             assert state_cookie, "state cookie missing"
             # State is inside the signed payload; extract via the URL state param.
