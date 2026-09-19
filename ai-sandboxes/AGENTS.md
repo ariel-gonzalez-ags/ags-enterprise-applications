@@ -131,7 +131,12 @@ the user before implementing**. See "Evolution path".
   every 6 steps to fight lost-in-the-middle drift. The agent also has a
   `fetch_docs(url)` tool to consult current official docs (MS Learn, terraform
   registry) instead of guessing from training data. Patterns borrowed from
-  OpenCode/Claude Code/OpenClaw harnesses.
+  OpenCode/Claude Code/OpenClaw harnesses. Both loops also accumulate
+  `total_tokens` from each response's `usage` and emit a running
+  `USAGE_TOKENS: <n>` line EVERY step (not just at clean completion): a hard
+  abort kills the agent mid-loop, so the last printed running total is what the
+  executor's `transcript.usage_tokens` (last-match) parses. Keep the token
+  reporting in sync across both files too.
   **Embers (cost meter).** 1 Ember = $0.01, the customer-facing unit. Every run
   burns Embers from two meters we control exactly: sandbox-seconds (we create
   and destroy the sandbox) + agent LLM tokens (Gemini returns `usage`; the

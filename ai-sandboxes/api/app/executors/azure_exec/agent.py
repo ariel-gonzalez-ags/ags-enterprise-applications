@@ -173,6 +173,7 @@ async def run_agent(settings, requirement: str, context: dict,
             f"Task: {requirement}\n\nSandbox context: {json.dumps(context)}")},
     ]
     log: list[str] = []
+    total_tokens = 0
     deliverables = context.get("outputs") or []
     for step in range(1, max_steps + 1):
         # Keep the window lean before each call: prune old tool outputs, compact
@@ -193,6 +194,13 @@ async def run_agent(settings, requirement: str, context: dict,
         # explicit nulls ("Value is not a struct: null"), it wants them omitted.
         msg = {k: v for k, v in resp.choices[0].message.model_dump(mode="json").items()
                if v is not None}
+        # Mirror the in-container agent_runner.SCRIPT: accumulate + emit the
+        # running token total every step so a hard stop still leaves the count
+        # (rule: keep this loop and the in-container script in sync).
+        usage = getattr(resp, "usage", None)
+        if usage is not None:
+            total_tokens += int(getattr(usage, "total_tokens", 0) or 0)
+            emit("USAGE_TOKENS: %d" % total_tokens)
         messages.append(msg)
         if not msg.get("tool_calls"):
             # Model produced plain text instead of a tool call: nudge it to act.

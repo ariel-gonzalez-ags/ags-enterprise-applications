@@ -275,7 +275,11 @@ async def test_agent_loop_declares_done():
                        "tool_calls": None}
         m = mock.Mock()
         m.model_dump = lambda mode="json": dict(payload)
-        return mock.Mock(choices=[mock.Mock(message=m)])
+        r = mock.Mock(choices=[mock.Mock(message=m)])
+        # Mirror the real SDK: usage is None unless the caller requests it, so
+        # the agent's token accumulation skips these debug-path responses.
+        r.usage = None
+        return r
 
     async def _create(**kw):
         calls["n"] += 1
