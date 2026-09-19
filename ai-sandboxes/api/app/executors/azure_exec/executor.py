@@ -196,7 +196,7 @@ class AzureExecutor:
             # checked, so it works for any request. The captured output lands in
             # verify.log as user-readable evidence.
             evidence = transcript_log.verify_evidence(transcript)
-            passing = [c for c, _out in evidence if c == 0]
+            passing = [c for c, _cmd, _out in evidence if c == 0]
             if done and not passing:
                 emit("declared done but no verification check passed "
                      f"({len(evidence)} attempt(s), none exit 0)")
@@ -207,6 +207,11 @@ class AzureExecutor:
                 note = "aborted by user"
             else:
                 note = summary or ("verified" if ok else f"incomplete ({state})")
+            # verify.log must show the PROOF, not re-dump the whole transcript
+            # (run.log already keeps that). Inject just the verify evidence as a
+            # deliverable so the runner stores it as the verify.log artifact.
+            files = dict(files)
+            files["verify.log"] = transcript_log.verify_log_text(transcript)
             self._result = RunResult(
                 ok=ok, exit_code=0 if ok else 1, log="\n".join(log),
                 files=files, idempotent=done,

@@ -15,15 +15,15 @@ def declared_done(text: str) -> bool:
     return "DONE" in lines
 
 
-def verify_evidence(text: str) -> list[tuple[int, str]]:
+def verify_evidence(text: str) -> list[tuple[int, str, str]]:
     """All verification blocks the agent produced via verify_outcome, as a list
-    of (exit_code, output). The agent must prove its claim by running a check
-    command it chose; the harness runs it and emits a VERIFY-RESULT marker with
-    the real exit code + captured output. The platform never trusts declare_done
-    alone: a run is only verified when at least one VERIFY-RESULT exits 0. This
-    is domain-agnostic (we check THAT a check passed, not WHAT it checked), so
-    it works for any request. Empty (no verify_outcome call) -> no evidence."""
-    out: list[tuple[int, str]] = []
+    of (exit_code, command, output). The agent must prove its claim by running a
+    check command it chose; the harness runs it and emits a VERIFY-RESULT marker
+    with the real exit code + captured output (+ VERIFY-CMD with the command).
+    The platform never trusts declare_done alone: a run is only verified when at
+    least one VERIFY-RESULT exits 0. Domain-agnostic (we check THAT a check
+    passed, not WHAT it checked), so it works for any request."""
+    out: list[tuple[int, str, str]] = []
     lines = text.splitlines()
     i = 0
     while i < len(lines):
@@ -33,14 +33,34 @@ def verify_evidence(text: str) -> list[tuple[int, str]]:
                 code = int(line.split("exit=", 1)[1].strip())
             except ValueError:
                 code = -1
-            buf: list[str] = []
+            cmd, buf = "", []
             i += 1
             while i < len(lines) and lines[i].strip() != "VERIFY-END":
-                buf.append(lines[i])
+                cur = lines[i]
+                if cur.strip().startswith("VERIFY-CMD:"):
+                    cmd = cur.split("VERIFY-CMD:", 1)[1].strip()
+                else:
+                    buf.append(cur)
                 i += 1
-            out.append((code, "\n".join(buf).strip()))
+            out.append((code, cmd, "\n".join(buf).strip()))
         i += 1
     return out
+
+
+def verify_log_text(text: str) -> str:
+    """Render JUST the verification evidence for verify.log: each check command
+    the agent ran, its pass/fail, and its real output. verify.log exists to show
+    the proof, so it must NOT be a copy of the full run transcript (run.log keeps
+    that). Returns a placeholder when no check ran."""
+    evidence = verify_evidence(text)
+    if not evidence:
+        return "(no verification check was run; the run did not verify)\n"
+    parts = []
+    for code, cmd, out in evidence:
+        status = "PASS" if code == 0 else f"FAIL (exit {code})"
+        label = cmd or "(command not captured)"
+        parts.append(f"$ {label}\n-> {status}\n{out}")
+    return "\n\n".join(parts) + "\n"
 
 
 def usage_tokens(text: str) -> int:

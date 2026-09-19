@@ -532,17 +532,26 @@ async def test_done_without_verify_evidence_is_not_verified():
 
 
 async def test_verify_evidence_parser():
-    # transcript.verify_evidence: last-match per block, captures exit + output,
-    # empty when no verify_outcome ran.
+    # transcript.verify_evidence: captures (exit_code, command, output) per
+    # block; empty when no verify_outcome ran. verify_log_text renders ONLY the
+    # evidence (command + pass/fail + output), not the whole transcript.
     from app.executors.azure_exec import transcript
     assert transcript.verify_evidence("no markers here") == []
     ev = transcript.verify_evidence(
-        "VERIFY-RESULT: exit=0\ntrue\nVERIFY-END\n")
-    assert ev == [(0, "true")], ev
+        "VERIFY-RESULT: exit=0\nVERIFY-CMD: check the thing\ntrue\nVERIFY-END\n")
+    assert ev == [(0, "check the thing", "true")], ev
     ev2 = transcript.verify_evidence(
         "VERIFY-RESULT: exit=1\nbad\nVERIFY-END\nVERIFY-RESULT: exit=0\nok\nVERIFY-END\n")
-    assert ev2 == [(1, "bad"), (0, "ok")], ev2
-    print("ok    transcript: verify_evidence parses exit code + output per block")
+    assert ev2 == [(1, "", "bad"), (0, "", "ok")], ev2
+    # verify_log_text: the proof, front and center, not a transcript copy
+    vlog = transcript.verify_log_text(
+        "tool: run_shell lots of noise\nagent: working\n"
+        "VERIFY-RESULT: exit=0\nVERIFY-CMD: az check\nall good\nVERIFY-END\n")
+    assert "az check" in vlog and "PASS" in vlog and "all good" in vlog, vlog
+    assert "lots of noise" not in vlog, "verify.log must NOT contain run noise"
+    assert "no verification check" in transcript.verify_log_text("nothing")
+    print("ok    transcript: verify_evidence (exit+cmd+output) + verify_log_text is evidence-only")
+
 
 
 

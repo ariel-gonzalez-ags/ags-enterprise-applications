@@ -87,6 +87,7 @@ def verify_outcome(command):
         out = "%s: %s" % (type(e).__name__, e)
         code = -1
     print("VERIFY-RESULT: exit=%d" % code, flush=True)
+    print("VERIFY-CMD: %s" % command.strip(), flush=True)
     print(out[:4000], flush=True)
     print("VERIFY-END", flush=True)
     return clip("(exit %d) %s" % (code, out))
