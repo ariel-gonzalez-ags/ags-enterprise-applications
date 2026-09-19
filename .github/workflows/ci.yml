@@ -4,8 +4,11 @@ on:
   push:
   pull_request:
 
-# Default to no token permissions; jobs opt into what they need.
-permissions: {}
+# Default to read-only repo access; jobs opt into anything more. An explicit
+# minimal baseline (contents: read) rather than `{}` so the GITHUB_TOKEN is
+# never implicitly broad (CodeQL actions/missing-workflow-permissions).
+permissions:
+  contents: read
 
 jobs:
   web:
