@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import asyncio
 
+__all__ = ["_AGENT_IMAGE", "BUILD", "_blocking"]
+
 # Agent container base. Microsoft Container Registry (MCR), NOT Docker Hub:
 # ACI's anonymous Docker Hub pulls hit the rate limit and the container sits in
 # "Waiting" forever (the run then times out and tears down). MCR has no anon

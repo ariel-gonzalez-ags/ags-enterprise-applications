@@ -15,7 +15,6 @@ from typing import AsyncIterator
 
 from ..base import RunPayload, RunResult
 from . import lifecycle
-from ._const import _AGENT_IMAGE, BUILD, _blocking  # noqa: F401  (re-export)
 from .credentials import clients
 
 
