@@ -9,18 +9,17 @@ import asyncio
 
 __all__ = ["_AGENT_IMAGE", "BUILD", "_blocking"]
 
-# Agent container base. Microsoft Container Registry (MCR), NOT Docker Hub:
-# ACI's anonymous Docker Hub pulls hit the rate limit and the container sits in
-# "Waiting" forever (the run then times out and tears down). MCR has no anon
-# limit. azure-cli ships az + python3 + ensurepip; we bootstrap pip + openai in
-# the command. Flagged for a curated ACR image with the toolchain preinstalled
-# (faster cold start, pinned) once an ACR exists. See TODO.
-_AGENT_IMAGE = "mcr.microsoft.com/azure-cli:latest"
+# Agent container image. We run the curated ghcr image (TODO 14b): the
+# toolchain + the runnable agent (/opt/ags/agent.py) are baked in, so a run
+# needs no runtime pip/bootstrap. ghcr public image -> no ACI pull auth and no
+# anonymous rate limit (the reason we avoided Docker Hub). The prior MCR
+# azure-cli image is the fallback if a ghcr image ever fails to pull.
+_AGENT_IMAGE = "ghcr.io/ariel-gonzalez-ags/ags-sandbox-azure:latest"
 
 # Bumped on each behavior change so a running container can prove which code it
 # has (guards against the stale-image churn we hit while debugging). Surfaced
 # in the first progress line.
-BUILD = "azexec-2026-09-18.3"  # + per-step USAGE_TOKENS so hard aborts bill tokens
+BUILD = "azexec-2026-09-19.1"  # ghcr curated image (baked toolchain+agent); no base64/pip bootstrap
 
 
 async def _blocking(fn, *args, **kwargs):

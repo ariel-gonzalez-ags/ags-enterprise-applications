@@ -55,6 +55,12 @@ RUN pip install --no-cache-dir "openai==${OPENAI_VERSION}"
 # The agent loop, baked in (no base64-over-command shim once the image is used).
 WORKDIR /opt/ags
 COPY agent_script.py /opt/ags/agent_script.py
+# agent_script.py exposes the agent as a SCRIPT raw string (the legacy executor
+# base64-decoded it at runtime). Materialize the runnable script at BUILD time
+# so the container just runs it: python3 /opt/ags/agent.py. Single source of
+# truth stays agent_script.SCRIPT (rule 11 sync with the API-side agent.py).
+RUN python3 -c "from agent_script import SCRIPT; open('/opt/ags/agent.py','w').write(SCRIPT)" \
+    && python3 -c "import ast; ast.parse(open('/opt/ags/agent.py').read())"  # fail the build if SCRIPT is not valid python
 
 # Non-root runtime user.
 RUN useradd --create-home --uid 10001 sandbox

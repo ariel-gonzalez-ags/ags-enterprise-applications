@@ -25,25 +25,21 @@ Layered container images the Agisphire sandbox agent runs on. See TODO item 14b.
 `ghcr.io/<owner>/ags-sandbox-{base,azure,aws,gcp}:{sha,latest}`. Public images,
 so a sandbox host pulls with no registry auth.
 
-## Status: build-only (not yet wired into the executor)
+## Status: the azure variant is wired into the executor (2026-09-19)
 
-These images are built and tool-verified but the executor does **not** use them
-yet. Wiring them in is a separate, live-verification step:
+`api/app/executors/azure_exec/_const.py::_AGENT_IMAGE` points at
+`ghcr.io/ariel-gonzalez-ags/ags-sandbox-azure:latest`. `Dockerfile.base`
+materializes the runnable agent from `agent_script.SCRIPT` at image build time
+(`/opt/ags/agent.py`, build fails if it isn't valid python), so
+`agent_runner.command_for()` just does `az login --identity` + `az account set`
++ `exec python3 /opt/ags/agent.py` -- no base64 payload, no runtime pip
+bootstrap (that ~1 min cold-start cost moved off the customer's bill).
 
-- `api/app/executors/azure_exec/_const.py::_AGENT_IMAGE` still points at
-  `mcr.microsoft.com/azure-cli:latest`.
-- `agent_runner.command_for()` still base64-encodes `agent_script.SCRIPT` into
-  the container command and bootstraps pip at runtime.
+Proven live (2026-09-19): a real ACI run on the public ghcr azure image reached
+`verified`, produced real artifacts (runbook.md / main.tf / verify.log), the
+run.log had no base64/pip/ensurepip bootstrap, and teardown was clean
+(verified_gone, zero leftover RG, 323s).
 
-**Contract caveat:** `agent_script.py` exposes its agent as a `SCRIPT` raw
-string, not an executable file — the executor decodes that string to
-`/tmp/agent.py` and runs it. So `COPY agent_script.py` into the image is not
-directly runnable as-is. When we wire the image in, either (a) have the image
-materialize the runnable script from `SCRIPT` at build time (a tiny build step:
-`python -c "from agent_script import SCRIPT; open('/opt/ags/agent.py','w').write(SCRIPT)"`),
-or (b) refactor `agent_script.py` so the agent is a real importable/runnable
-module and `SCRIPT` is derived from it. Then `command_for()` drops the base64 +
-pip bootstrap and just `az login --identity` + `exec python3 /opt/ags/agent.py`.
-
-Keep the MCR fallback until a ghcr image is proven in a real run (zero-spend
-mock first, then one live run per cloud variant).
+The aws/gcp variants are built + tool-verified but NOT yet run in a live
+sandbox (they need AWS/GCP creds configured; the planner picks the variant from
+the task's `provider`).
