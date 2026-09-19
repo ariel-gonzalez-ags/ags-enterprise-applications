@@ -130,6 +130,9 @@ def usage_tokens(text: str) -> int:
             try:
                 total = int(line.split(":", 1)[1].strip())
             except ValueError:
+                # A malformed USAGE_TOKENS line is non-fatal: keep the last
+                # good total and continue scanning (the agent should not crash
+                # the meter on a bad print).
                 pass
     return total
 
