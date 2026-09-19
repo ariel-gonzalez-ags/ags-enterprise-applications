@@ -134,7 +134,8 @@ TOOLS = [
         "function": {
             "name": "declare_done",
             "description": "Declare the outcome achieved. Provide a concise "
-                           "summary and the list of artifact file paths produced.",
+                           "summary and the list of artifact file paths produced. "
+                           "ONLY after the work is done AND a verify_outcome passed.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -142,6 +143,39 @@ TOOLS = [
                     "artifacts": {"type": "array", "items": {"type": "string"}},
                 },
                 "required": ["summary"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "declare_infeasible",
+            "description": "Declare the task CANNOT be done as asked (a documented "
+                           "limitation: an Azure restriction, a docs-stated "
+                           "constraint, a hard conflict in the requirement). Give a "
+                           "concrete reason + cite real evidence. Never fake success.",
+            "parameters": {
+                "type": "object",
+                "properties": {"reason": {"type": "string"},
+                               "evidence": {"type": "string"}},
+                "required": ["reason", "evidence"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "declare_blocked",
+            "description": "Declare the run could not complete because the "
+                           "PLATFORM/sandbox failed (auth/quota/a resource it could "
+                           "not provision). Give the real error as evidence. Do NOT "
+                           "write deliverables and claim done when you could not "
+                           "actually build or test the thing.",
+            "parameters": {
+                "type": "object",
+                "properties": {"reason": {"type": "string"},
+                               "evidence": {"type": "string"}},
+                "required": ["reason", "evidence"],
             },
         },
     },
@@ -161,6 +195,12 @@ Rules:
   endpoint, run the assertion). The run is only verified if it exits 0.
 - When the outcome is achieved and verified, call declare_done with a summary
   and the artifact paths. Do not stop early.
+- HONESTY RULE: if you cannot actually build and verify the thing, do NOT write
+  deliverables and claim done. Call declare_blocked (platform/sandbox failed:
+  auth, quota, a resource you could not create) or declare_infeasible (the ask
+  is impossible, documented). Always cite the real error/limitation as evidence.
+  A verify_outcome that only checks your own files exist is NOT verification;
+  the check must exercise the real deployed outcome.
 - You have a step budget; be efficient."""
 
 # Tool executor: name -> async callable(args) -> str result. Injected so the
@@ -242,6 +282,12 @@ async def run_agent(settings, requirement: str, context: dict,
                 return {"done": True, "summary": args.get("summary", ""),
                         "artifacts": args.get("artifacts", []),
                         "steps": step, "log": "\n".join(log)}
+            if name in ("declare_infeasible", "declare_blocked"):
+                outcome = "infeasible" if name == "declare_infeasible" else "blocked"
+                return {"done": False, "outcome": outcome,
+                        "summary": args.get("reason", ""),
+                        "evidence": args.get("evidence", ""),
+                        "artifacts": [], "steps": step, "log": "\n".join(log)}
             result = await run_tool(name, args)
             log.append(f"  -> {result[:300]}")
             messages.append({"role": "tool", "tool_call_id": call.get("id"),

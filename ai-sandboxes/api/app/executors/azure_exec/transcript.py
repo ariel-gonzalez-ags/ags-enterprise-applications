@@ -15,6 +15,38 @@ def declared_done(text: str) -> bool:
     return "DONE" in lines
 
 
+def declared_outcome(text: str) -> tuple[str, str, str]:
+    """The agent's terminal verdict. One of:
+      ("done", ...)      - standalone DONE line; built it and a check passed
+      ("infeasible", reason, evidence) - the task CANNOT be done as asked, with a
+                           documented reason (Azure error, docs limitation, hard
+                           constraint) the agent must supply
+      ("blocked", reason, evidence)    - the PLATFORM/sandbox failed the agent
+                           (auth, quota, a resource it could not provision)
+      ("incomplete", ...) - ran out of budget/steps or crashed; no verdict
+    The agent emits INFEASIBLE: / BLOCKED: lines (optionally followed by an
+    EVIDENCE: line). INFEASIBLE/BLOCKED win over DONE: an agent that hit a wall
+    must say so, not claim success. Non-success verdicts are evidence-backed so
+    the final decision is a real, inspectable statement, never a silent failure.
+    """
+    lines = [l.strip() for l in text.splitlines()]
+    verdict, reason, evidence = "incomplete", "", ""
+    for i, l in enumerate(lines):
+        if l.startswith("INFEASIBLE:"):
+            verdict, reason = "infeasible", l.split(":", 1)[1].strip()
+        elif l.startswith("BLOCKED:"):
+            verdict, reason = "blocked", l.split(":", 1)[1].strip()
+        elif l.startswith("EVIDENCE:") and verdict in ("infeasible", "blocked"):
+            evidence = l.split(":", 1)[1].strip()
+    if verdict in ("infeasible", "blocked"):
+        return verdict, reason, evidence
+    if "INCOMPLETE" in lines:
+        return "incomplete", "", ""
+    if "DONE" in lines:
+        return "done", "", ""
+    return "incomplete", "", ""
+
+
 def verify_evidence(text: str) -> list[tuple[int, str, str]]:
     """All verification blocks the agent produced via verify_outcome, as a list
     of (exit_code, command, output). The agent must prove its claim by running a

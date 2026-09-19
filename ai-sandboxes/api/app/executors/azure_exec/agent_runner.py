@@ -174,9 +174,28 @@ TOOLS = [
         "parameters": {"type": "object", "properties": {"command": {"type": "string"}},
                        "required": ["command"]}}},
     {"type": "function", "function": {"name": "declare_done", "description":
-        "Declare the outcome achieved and verified.",
+        "Declare the outcome achieved and verified. ONLY call this after the work "
+        "is truly done AND a verify_outcome check passed.",
         "parameters": {"type": "object", "properties": {"summary": {"type": "string"}},
                        "required": ["summary"]}}},
+    {"type": "function", "function": {"name": "declare_infeasible", "description":
+        "Declare the task CANNOT be done as asked, due to a documented limitation "
+        "(an Azure restriction, a docs-stated constraint, a hard conflict in the "
+        "requirement). Use this when the ask itself is impossible, NOT when the "
+        "sandbox/platform failed. You MUST give a concrete reason and cite real "
+        "evidence (the exact error, or the docs limitation). Never fake success.",
+        "parameters": {"type": "object", "properties": {
+            "reason": {"type": "string"}, "evidence": {"type": "string"}},
+            "required": ["reason", "evidence"]}}},
+    {"type": "function", "function": {"name": "declare_blocked", "description":
+        "Declare the run could not complete because the PLATFORM/sandbox failed "
+        "you: authentication/authorization errors, quota limits, a resource the "
+        "sandbox could not provision, missing access. You MUST give the real "
+        "error as evidence. Do NOT write deliverable files and claim done when "
+        "you could not actually build or test the thing.",
+        "parameters": {"type": "object", "properties": {
+            "reason": {"type": "string"}, "evidence": {"type": "string"}},
+            "required": ["reason", "evidence"]}}},
 ]
 
 SYSTEM = ("You are the Agisphire sandbox agent inside an ephemeral Azure sandbox, "
@@ -196,6 +215,14 @@ SYSTEM = ("You are the Agisphire sandbox agent inside an ephemeral Azure sandbox
           "created; runbook.md describes what ran and how to re-verify). A run that "
           "declares done without writing ALL of these files is REJECTED as "
           "incomplete. Then call declare_done with a one-line summary. "
+          "HONESTY RULE: if you CANNOT actually build and verify the thing, do "
+          "NOT write the deliverable files and declare done. Instead call "
+          "declare_blocked (the sandbox/platform failed: auth, quota, a resource "
+          "you could not create) or declare_infeasible (the ask itself is "
+          "impossible, with a documented reason). Always cite the real error or "
+          "limitation as evidence. A verify_outcome that only checks your own "
+          "files exist (ls, cat) is NOT verification; the check must exercise the "
+          "real deployed outcome. "
           "Be efficient: write each file ONCE and prefer combined commands.")
 
 messages = [{"role": "system", "content": SYSTEM},
@@ -203,6 +230,7 @@ messages = [{"role": "system", "content": SYSTEM},
              % (REQUIREMENT, RG, TAGS)}]
 
 done, summary = False, ""
+outcome, outcome_reason, outcome_evidence = "", "", ""
 total_tokens = 0
 STARTED = time.time()
 BUDGET_S = int(os.environ.get("AGS_BUDGET_SECONDS", "0"))   # 0 = no cap
@@ -263,6 +291,18 @@ for step in range(1, MAX_STEPS + 1):
         if name == "declare_done":
             done, summary = True, args.get("summary", "")
             break
+        if name == "declare_infeasible":
+            # The task cannot be done as asked (a documented limitation), NOT a
+            # platform failure. Be honest: do not write files and claim done.
+            outcome, outcome_reason = "infeasible", args.get("reason", "")
+            outcome_evidence = args.get("evidence", "")
+            break
+        if name == "declare_blocked":
+            # The PLATFORM/sandbox failed the agent (auth, quota, a resource it
+            # could not provision). Be honest: report the real error as evidence.
+            outcome, outcome_reason = "blocked", args.get("reason", "")
+            outcome_evidence = args.get("evidence", "")
+            break
         if name == "run_shell":
             result = run_shell(args.get("command", ""))
         elif name == "verify_outcome":
@@ -275,11 +315,19 @@ for step in range(1, MAX_STEPS + 1):
             result = "(error) unknown tool: %s" % name
         print(f"  -> {result[:200]}", flush=True)
         messages.append({"role": "tool", "tool_call_id": call["id"], "content": result})
-    if done:
+    if done or outcome:
         break
 
-print("DONE" if done else "INCOMPLETE", flush=True)
-print("SUMMARY: " + summary, flush=True)
+if outcome in ("infeasible", "blocked"):
+    # Honest non-success: emit the verdict + the documented reason + evidence so
+    # the platform can record a real, inspectable outcome (never a silent fail).
+    print(("INFEASIBLE: " if outcome == "infeasible" else "BLOCKED: ") + outcome_reason, flush=True)
+    if outcome_evidence:
+        print("EVIDENCE: " + outcome_evidence, flush=True)
+    print("SUMMARY: " + (summary or outcome_reason), flush=True)
+else:
+    print("DONE" if done else "INCOMPLETE", flush=True)
+    print("SUMMARY: " + summary, flush=True)
 print("USAGE_TOKENS: %d" % total_tokens, flush=True)
 for fname in OUTPUTS:
     try:

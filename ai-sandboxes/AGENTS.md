@@ -107,9 +107,22 @@ the user before implementing**. See "Evolution path".
   container and its logs. (6) A sandbox-scoped Gemini key must not carry an IP
   allowlist, or ACI's egress IP gets a 403. (7) Verification requires every
   requested deliverable file to be present and non-empty in the transcript: an
-  agent that declares done but skips a file (leaving an empty artifact) is
-  REJECTED as incomplete, and the system prompt makes writing each file
-  mandatory. (8) The task carries `run_stage` + a live `run_log` transcript
+   agent that declares done but skips a file (leaving an empty artifact) is
+   REJECTED as incomplete, and the system prompt makes writing each file
+   mandatory. (7b) Verified also requires EVIDENCE, not just DONE: the agent has
+   a `verify_outcome(check_command)` tool it MUST call before declare_done; the
+   harness runs the check and emits `VERIFY-RESULT: exit=N` + `VERIFY-CMD:` +
+   captured output, and the platform stamps verified only when a VERIFY-RESULT
+   exits 0 (domain-agnostic: we check THAT a check passed, never WHAT). `verify.log`
+   holds ONLY that evidence (command + pass/fail + output); `run.log` keeps the
+   full transcript. (7c) Honest non-success outcomes: the agent can also call
+   `declare_infeasible(reason, evidence)` (the ask is impossible, documented) or
+   `declare_blocked(reason, evidence)` (the platform/sandbox failed it: auth,
+   quota). These emit INFEASIBLE:/BLOCKED: + EVIDENCE: markers, WIN over DONE, and
+   land the task in a TERMINAL `infeasible`/`blocked` state (not back to planned)
+   with the documented reason + evidence stored as verify.log. The point: no
+   silent failure and no fake success; the final decision is always an inspectable
+   statement. (8) The task carries `run_stage` + a live `run_log` transcript
   (appended per line during the run) so the console can render a live activity
   feed while the agent works, instead of a frozen thread. (9) The Azure
   management SDK is SYNCHRONOUS: every SDK call in the executor must go through

@@ -37,6 +37,14 @@ class RunResult:
     # carries the evidence (RG name, destroyed_at, verified_gone). Empty when the
     # backend does not produce a proof (e.g. simulated runs).
     teardown_proof: dict = field(default_factory=dict)
+    # The agent's terminal verdict (#12): "done" (built + a check passed),
+    # "infeasible" (cannot be done as asked, documented), "blocked" (the
+    # platform/sandbox failed it, documented), or "incomplete" (no verdict).
+    # reason/evidence carry the documented statement for non-success verdicts so
+    # the final decision is inspectable, never a silent failure.
+    outcome: str = ""
+    outcome_reason: str = ""
+    outcome_evidence: str = ""
 
 
 class Executor(Protocol):

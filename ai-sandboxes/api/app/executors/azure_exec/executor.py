@@ -184,6 +184,13 @@ class AzureExecutor:
             done = transcript_log.declared_done(transcript)
             files = transcript_log.files_from_log(transcript)
             summary = transcript_log.summary_from_log(transcript)
+            # The agent's honest verdict (#12): done / infeasible / blocked /
+            # incomplete. INFEASIBLE and BLOCKED carry a documented reason +
+            # evidence, and they WIN over any DONE the agent also printed: an
+            # agent that hit a wall must not be able to claim success.
+            outcome, out_reason, out_evidence = transcript_log.declared_outcome(transcript)
+            if outcome in ("infeasible", "blocked"):
+                done = False
             # Verification requires the agent to have actually produced every
             # requested deliverable. A declared-done with a missing/empty
             # deliverable is NOT verified: it means the agent built the
@@ -207,9 +214,11 @@ class AzureExecutor:
                      f"({len(evidence)} attempt(s), none exit 0)")
                 yield log[-1]
                 done = False
-            ok = done and state == "Succeeded"
+            ok = done and outcome == "done" and state == "Succeeded"
             if self.aborted:
                 note = "aborted by user"
+            elif outcome in ("infeasible", "blocked"):
+                note = f"{outcome}: {out_reason}" if out_reason else outcome
             else:
                 note = summary or ("verified" if ok else f"incomplete ({state})")
             # verify.log must show the PROOF, not re-dump the whole transcript
@@ -222,7 +231,9 @@ class AzureExecutor:
                 files=files, idempotent=done,
                 note=note,
                 sandbox_seconds=int(time.time()) - sb.created_at,
-                llm_tokens=transcript_log.usage_tokens(transcript))
+                llm_tokens=transcript_log.usage_tokens(transcript),
+                outcome=outcome, outcome_reason=out_reason,
+                outcome_evidence=out_evidence)
         except Exception as exc:  # never leave a run unreported
             # Grab whatever the agent printed before it died, so the failure is
             # diagnosable instead of a bare "error" (the RG delete would
