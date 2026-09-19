@@ -139,7 +139,7 @@ the user before implementing**. See "Evolution path".
   per-RG role assignment has PROPAGATED before launching the agent
   (`_wait_for_rbac`): launching early makes the agent's `az login --identity`
   return "no subscriptions found" and spin. (11) **Agent context engineering**
-  (mirrored in the API-side `agent.py` and the in-container `agent_runner.SCRIPT`;
+  (mirrored in the API-side `agent.py` and the in-container `agent_script.SCRIPT`;
   keep them in sync): the ReAct loop keeps the window lean so long runs stay
   sharp and cheap. Each step it (a) PRUNES all but the last 3 tool results to a
   `[cleared]` stub (full text stays in the on-disk transcript), (b) truncates
@@ -247,7 +247,10 @@ the user before implementing**. See "Evolution path".
 │       ├── db.py         ← async engine/session factory, create_schema
 │       ├── models.py     ← Task/Message/Artifact (GUID task ids)
 │       ├── planner.py    ← Gemini via OpenAI-compat endpoint, JSON contract
-│       ├── runner.py     ← run state machine (simulated timer OR real engine)
+│       ├── runner.py     ← run state machine (simulated timer OR real engine);
+│       │   │               settlement (Ember burn, artifacts, terminal state)
+│       │   │               lives in _settle.py
+│       ├── _settle.py    ← how a finished/aborted/failed run is settled
 │       ├── simfiles.py   ← simulated-run artifact generation helpers
 │       ├── ratelimit.py  ← per-user rate limits (concurrent + daily sandbox-hours)
 │       ├── killswitch.py ← abort registry: executor handles + cancel flags (TODO #7)
@@ -258,8 +261,13 @@ the user before implementing**. See "Evolution path".
 │       │       │             `azure` namespace): credentials.py (platform SP ->
 │       │       │             mgmt clients), lifecycle.py (tagged RG + per-RG
 │       │       │             identity + ACI agent container + teardown/cost row),
-│       │       │             agent.py (Gemini tool-calling loop), tags.py
-│       │       │             (chargeback tag model), executor.py (orchestration)
+│       │       │             executor.py (AzureExecutor class: thin wrapper),
+│       │       │             runloop.py (the provision->launch->stream->teardown
+│       │       │             run body), agent_script.py (the in-container agent,
+│       │       │             a raw SCRIPT string), agent_runner.py (command_for:
+│       │       │             base64 + launch that script), agent.py (run_agent,
+│       │       │             the API-side loop), agent_context.py (its helpers +
+│       │       │             toolbelt + system prompt), tags.py (chargeback tags)
 │       ├── events.py     ← in-process pub/sub bus for SSE task updates
 │       ├── session.py    ← signed session cookie create/read/clear
 │       └── routers/      ← auth.py (Google OAuth) + tasks.py (product API)
