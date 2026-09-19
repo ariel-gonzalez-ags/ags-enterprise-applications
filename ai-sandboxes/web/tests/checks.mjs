@@ -57,7 +57,7 @@ check('app: target-cloud picker in rail', app.includes('data-console="providers"
 check('app: no mock data shipped', !app.includes('ags_b3f58c') && !app.includes('OOMKill'));
 check('app: gate overlay present (no-JS fallback)', app.includes('gate-overlay'));
 check('app: gate script calls /api/auth/me', app.includes('/api/auth/me'));
-check('app: gate boots console.js for signed-in users', app.includes('/js/console.js'));
+check('app: gate boots the console module for signed-in users', app.includes('/js/console/index.js'));
 check('app: gate redirects anonymous to /login', /location\.replace\(['`]\/login['`]\)/.test(app));
 check('app: console nav renders (not marketing nav)', app.includes('Search tasks') && !app.includes('How it works'));
 check('app: provider logos wired', ['/assets/providers/aws.svg', '/assets/providers/azure.svg', '/assets/providers/gcp.svg'].every((p) => app.includes(p)));
@@ -86,10 +86,13 @@ check('asset: usage.js calls embers API', usageJs.includes('/api/embers'));
 check('asset: usage.js wires billing endpoints', usageJs.includes('/api/billing/topup') && usageJs.includes('/api/billing/card-setup') && usageJs.includes('/api/billing/config'));
 check('asset: usage.js renders text not untrusted html', usageJs.includes('textContent'));
 
-const consoleJs = read('js/console.js');
-check('asset: console.js is an IIFE', consoleJs.includes('(function () {'));
-check('asset: console.js calls tasks API', consoleJs.includes('/api/tasks'));
-check('asset: console.js escapes rendered text', consoleJs.includes('&lt;'));
+// console is now ES modules under js/console/ (split from the old single
+// console.js IIFE). Assert on the entry + the shared-state module instead.
+const consoleJs = read('js/console/index.js');
+const consoleState = read('js/console/state.js');
+check('asset: console entry imports its modules', consoleJs.includes("from './state.js'") && consoleJs.includes("from './dataflow.js'"));
+check('asset: console calls tasks API', consoleState.includes('/api/tasks') || read('js/console/dataflow.js').includes('/api/tasks'));
+check('asset: console escapes rendered text', consoleState.includes('&lt;'));
 
 const authJs = read('js/auth.js');
 check('asset: auth.js uses /api/auth/me', authJs.includes('/api/auth/me'));
