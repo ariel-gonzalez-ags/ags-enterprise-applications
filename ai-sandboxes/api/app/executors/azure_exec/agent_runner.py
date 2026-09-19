@@ -9,8 +9,6 @@ bootstrap -- that cold-start cost and failure surface moved to image build.
 """
 from __future__ import annotations
 
-from .agent_script import SCRIPT  # noqa: F401  (re-export; kept in sync with the baked /opt/ags/agent.py)
-
 def command_for() -> list[str]:
     """The ACI container command: authenticate to Azure as the sandbox's
     managed identity, then run the agent baked into the image. No `set -x` and
