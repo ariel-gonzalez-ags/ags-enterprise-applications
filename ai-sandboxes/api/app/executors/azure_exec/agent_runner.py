@@ -365,7 +365,9 @@ def command_for() -> list[str]:
             # tenant and fails SubscriptionNotFound. provision() already blocked
             # until the identity's role assignment propagated, so these succeed.
             "az login --identity --allow-no-subscriptions 2>&1 | tail -2 || true; "
-            "az account set --subscription \\\"$AZURE_SUBSCRIPTION_ID\\\" 2>&1 | tail -2 || true; "
+            # No quotes around the id: it is a GUID (safe), and baked-in quotes
+            # made az account set fail with a malformed subscription id (real bug).
+            "az account set --subscription $AZURE_SUBSCRIPTION_ID 2>&1 | tail -2 || true; "
             "az account show 2>&1 | tail -3 || true; "
             f"echo {b64} | base64 -d > /tmp/agent.py && "
             "PYTHONPATH=/app/pylibs python3 /tmp/agent.py"]
