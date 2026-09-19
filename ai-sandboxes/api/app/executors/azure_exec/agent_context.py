@@ -11,10 +11,10 @@ import json
 # Context engineering (mirrors the in-container agent_runner.SCRIPT): keep the
 # window lean so long runs stay sharp and cheap. Budget is a model-aware
 # default; the in-container script reads AGS_CTX_BUDGET.
-_CTX_BUDGET = 90000        # est tokens; compact above this
+_CTX_BUDGET = 90000  # used by agent.run_agent        # est tokens; compact above this
 _KEEP_RECENT_TOOLS = 3     # tool results kept verbatim
 _TOOL_CAP = 1800           # chars kept per tool result
-_RECITE_EVERY = 6          # restate goal+checklist every N steps
+_RECITE_EVERY = 6  # used by agent.run_agent          # restate goal+checklist every N steps
 
 
 def _est_tokens(messages: list) -> int:
@@ -167,6 +167,7 @@ TOOLS = [
     },
 ]
 
+# Consumed by agent.run_agent (imported there); the sandbox identity prompt.
 _SYSTEM = """You are the Agisphire sandbox agent. You are running inside an
 ephemeral Azure sandbox, authenticated to EXACTLY ONE resource group (yours).
 Your job: achieve the task outcome using the tools, then verify it.

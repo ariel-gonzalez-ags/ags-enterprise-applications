@@ -13,9 +13,20 @@ from typing import Awaitable, Callable
 from openai import AsyncOpenAI
 
 from .agent_context import (
-    TOOLS, _SYSTEM, _CTX_BUDGET, _KEEP_RECENT_TOOLS, _RECITE_EVERY, _TOOL_CAP,
+    TOOLS, _SYSTEM, _CTX_BUDGET, _RECITE_EVERY,
     _clip, _compact, _est_tokens, _prune_tools,
 )
+from . import agent_context as _ac  # re-export surface for tests (agent._KEEP_RECENT_TOOLS etc.)
+
+# Re-export the context helpers/constants the loop does not use directly but
+# tests reach as agent._X. __getattr__ keeps those attribute reads working
+# without listing (and tripping "unused import" on) every private name.
+_REEXPORTED = ("_KEEP_RECENT_TOOLS", "_TOOL_CAP")
+
+def __getattr__(name):
+    if name in _REEXPORTED:
+        return getattr(_ac, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 from .credentials import AzureUnavailable  # noqa: F401  (re-export)
 
 _GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"

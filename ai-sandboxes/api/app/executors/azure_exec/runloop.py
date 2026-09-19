@@ -15,7 +15,7 @@ import time
 from ..base import RunPayload, RunResult
 from . import agent_runner, lifecycle, tags as tagger
 from . import transcript as transcript_log
-from .executor import _blocking, _AGENT_IMAGE, BUILD
+from ._const import _AGENT_IMAGE, BUILD, _blocking
 
 
 async def run_executor(self, payload: RunPayload) -> "AsyncIterator[str]":

@@ -7,8 +7,7 @@ import asyncio
 
 from . import db, embers, events, killswitch, simfiles
 from .models import Artifact, Message, Task
-from ._settle import (  # noqa: F401
-    _abort_run, _finish_run, _say, _store_teardown_proof)
+from ._settle import _abort_run, _finish_run, _say
 
 _TICK_SECONDS = 3  # dev-friendly tick for the simulated path; real runs are event-driven
 
