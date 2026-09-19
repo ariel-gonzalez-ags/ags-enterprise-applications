@@ -99,21 +99,19 @@
     topupErr.textContent = msg; topupErr.hidden = !msg;
   }
 
+  var packs = document.querySelectorAll('[data-usage="pack"]');
+  function clearPacks() { packs.forEach(function (b) { b.classList.remove('sel'); }); }
   // Pack buttons select an amount; typing a custom amount deselects them.
-  document.querySelectorAll('[data-usage="pack"]').forEach(function (btn) {
+  packs.forEach(function (btn) {
     btn.addEventListener('click', function () {
-      document.querySelectorAll('[data-usage="pack"]').forEach(function (b) { b.classList.remove('sel'); });
-      btn.classList.add('sel');
+      clearPacks(); btn.classList.add('sel');
       pickedUsd = parseFloat(btn.getAttribute('data-usd'));
       if (customUsd) customUsd.value = '';
       showErr('');
     });
   });
   if (customUsd) customUsd.addEventListener('input', function () {
-    if (customUsd.value) {
-      document.querySelectorAll('[data-usage="pack"]').forEach(function (b) { b.classList.remove('sel'); });
-      pickedUsd = null;
-    }
+    if (customUsd.value) { clearPacks(); pickedUsd = null; }
   });
 
   if (topupGo) topupGo.addEventListener('click', function () {
@@ -229,7 +227,6 @@
       .then(function (cfg) { BILLING = cfg; renderBilling(); })
       .catch(function () { /* billing hidden */ });
   }
-
   function loadEmbers() {
     return fetch('/api/embers', { credentials: 'same-origin' })
       .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
@@ -238,18 +235,15 @@
         if (histEl) { histEl.innerHTML = ''; histEl.appendChild(empty('Could not load usage. Try refreshing.')); }
       });
   }
+  function loadAll() { loadEmbers(); loadBilling(); }
 
   // Returning from Stripe (card saved / top-up paid) lands us back here with a
   // query param. The webhook may still be in flight, so re-fetch a couple of
   // times to catch the credited balance / flipped card flag, then clean the URL.
   var ret = new URLSearchParams(window.location.search);
-  var returnedFromStripe = ret.has('card') || ret.has('topup');
-  loadEmbers();
-  loadBilling();
-  if (returnedFromStripe) {
-    [1200, 3000].forEach(function (ms) {
-      setTimeout(function () { loadEmbers(); loadBilling(); }, ms);
-    });
+  loadAll();
+  if (ret.has('card') || ret.has('topup')) {
+    [1200, 3000].forEach(function (ms) { setTimeout(loadAll, ms); });
     window.history.replaceState({}, '', window.location.pathname);
   }
 })();

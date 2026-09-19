@@ -10,7 +10,7 @@ Design notes:
   EmberAccount.stripe_customer_id). Created lazily on first billing action.
 - Top-up: a Checkout Session in `payment` mode. The amount maps to Embers at
   the configured peg ($0.01/Ember); the webhook (checkout.session.completed)
-  credits the balance. We never trust a client-side "I paid" — only the signed
+  credits the balance. We never trust a client-side "I paid"; only the signed
   webhook moves Embers.
 - Card gate (trial): a Checkout Session in `setup` mode (a $0 SetupIntent)
   stores a card without charging. Once it completes, card_on_file flips true
