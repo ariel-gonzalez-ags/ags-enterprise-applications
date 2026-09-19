@@ -187,6 +187,61 @@ async def test_teardown_proof_stored_as_artifact():
     print("ok    teardown proof stored as teardown.json artifact on a verified run (#13)")
 
 
+async def test_abort_records_real_meters_and_proof():
+    # Regression for the abort race: when a run is stopped mid-flight, the runner
+    # must read the SETTLED result (real sandbox_seconds/tokens + teardown proof),
+    # not the init stub. The old break-early read result() before the executor's
+    # generator finished, recording 0 Embers and no teardown.json.
+    import app.runner as runner
+    from app.executors.base import RunResult
+    from app.models import Artifact, Task
+    from sqlalchemy import select
+    s = _settings(EXECUTOR_BACKEND="azure", GEMINI_API_KEY="k")
+    db.init(os.environ["DB_PATH"]); await db.create_schema()
+
+    class _FakeEx:
+        def __init__(self): self.live_log = []; self._res = None
+        async def run(self, payload):
+            for i in range(3):
+                self.live_log.append(f"line {i}"); yield f"line {i}"
+                await asyncio.sleep(0.03)
+            # settle the real result AFTER teardown, like the real executor does
+            self._res = RunResult(ok=False, exit_code=1, log="x", note="aborted by user",
+                                  sandbox_seconds=47, llm_tokens=1200,
+                                  teardown_proof={"resource_group": "rg-x",
+                                                  "verified_gone": True,
+                                                  "duration_seconds": 47})
+        def result(self):
+            return self._res or RunResult(ok=False, exit_code=-1, log="",
+                                          note="not run", sandbox_seconds=0, llm_tokens=0)
+        def abort(self): pass
+
+    async with db.session() as sess:
+        sess.add(Task(id="abort-meters", owner_sub="u", title="x",
+                      state="running", formats=["markdown"]))
+        await sess.commit()
+    import app.executors as ex_mod
+    orig = ex_mod.get_executor
+    ex_mod.get_executor = lambda settings: _FakeEx()
+    try:
+        drive = asyncio.ensure_future(runner._run_real("abort-meters", s))
+        await asyncio.sleep(0.05)
+        runner.killswitch.request_abort("abort-meters")
+        await asyncio.wait_for(drive, timeout=10)
+    finally:
+        ex_mod.get_executor = orig
+    async with db.session() as sess:
+        t = await sess.get(Task, "abort-meters")
+        assert t.sandbox_seconds == 47 and t.llm_tokens == 1200, \
+            f"aborted run must bill real meters, got {t.sandbox_seconds}s/{t.llm_tokens}tok"
+        assert t.embers_spent > 0, "aborted run must burn some Embers"
+        names = {a.filename for a in (await sess.execute(
+            select(Artifact).where(Artifact.task_id == "abort-meters"))).scalars().all()}
+        assert "teardown.json" in names, f"aborted run must store teardown proof, got {names}"
+    print("ok    abort records real meters + teardown proof, not the init stub")
+
+
+
 def test_azure_configured_gate():
     s = _settings()
     assert s.azure_configured is True
@@ -475,6 +530,7 @@ async def main():
     await test_executor_failed_run_returns_not_ok()
     await test_executor_abort_tears_down()
     await test_teardown_proof_stored_as_artifact()
+    await test_abort_records_real_meters_and_proof()
     print("\nAzure executor: all checks passed (mocked, no spend)")
 
 

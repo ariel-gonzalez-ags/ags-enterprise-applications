@@ -209,9 +209,15 @@ async def _run_real(task_id: str, settings) -> None:
     try:
         done = 0
         async for line in executor.run(payload):
-            if killswitch.is_aborted(task_id):
-                break  # kill switch: stop consuming output; executor.abort()
-                       # already tore the sandbox down
+            # Kill switch: once aborted, STOP updating progress but KEEP draining
+            # the generator to the end. The executor's abort() tears down in the
+            # background and the generator then settles self._result with the real
+            # meters (sandbox_seconds, teardown_proof). Breaking early here read
+            # result() before that settle, returning the init stub (0 seconds),
+            # which is why an aborted run recorded 0 Embers and no teardown proof.
+            aborted = killswitch.is_aborted(task_id)
+            if aborted:
+                continue
             done += 1
             stage = _stage_for_line(line)
             async with db.session() as s:
