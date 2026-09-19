@@ -264,7 +264,7 @@ async def run_agent(settings, requirement: str, context: dict,
         if not msg.get("tool_calls"):
             # Model produced plain text instead of a tool call: nudge it to act.
             text = (msg.get("content") or "").strip()
-            emit(f"agent: {text[:120]}")
+            emit(f"agent: {text}")
             log.append(f"[step {step}] note: {text}")
             messages.append({"role": "user", "content":
                              "Continue with tools, or call declare_done if finished."})
@@ -277,7 +277,15 @@ async def run_agent(settings, requirement: str, context: dict,
             except ValueError:
                 args = {}
             emit(f"agent tool: {name}")
-            log.append(f"[step {step}] {name}({json.dumps(args)[:200]})")
+            # Full tool args in run.log (no [:200] cut): the command is the most
+            # important line. write_file content is stored as an artifact, so log
+            # only its size, not the whole body (#12b).
+            if name == "write_file":
+                disp = {"path": args.get("path", ""),
+                        "content": "(%d chars; stored as the artifact)" % len(args.get("content", ""))}
+            else:
+                disp = args
+            log.append(f"[step {step}] {name}({json.dumps(disp)})")
             if name == "declare_done":
                 return {"done": True, "summary": args.get("summary", ""),
                         "artifacts": args.get("artifacts", []),
@@ -289,7 +297,9 @@ async def run_agent(settings, requirement: str, context: dict,
                         "evidence": args.get("evidence", ""),
                         "artifacts": [], "steps": step, "log": "\n".join(log)}
             result = await run_tool(name, args)
-            log.append(f"  -> {result[:300]}")
+            # Full result via _clip (pointer for long output), not a flat [:300]
+            # cut that loses the tail with no recovery (#12b).
+            log.append(f"  -> {_clip(result)}")
             messages.append({"role": "tool", "tool_call_id": call.get("id"),
                              "content": _clip(result)})
     return {"done": False, "summary": "step budget exhausted", "artifacts": [],

@@ -101,10 +101,17 @@ the user before implementing**. See "Evolution path".
   the group's `provisioning_state`, which flips to Succeeded the moment ACI
   provisions the group and would otherwise tear down mid-run. (3) The agent
   must `az login --identity` before any az call. (4) The run's done-marker is a
-  standalone `DONE` line; never substring-match it (`"DONE" in text` also
-  matches `INCOMPLETE`). (5) The full agent transcript is persisted to the task
-  as a `run.log` artifact before teardown, because teardown deletes the
-  container and its logs. (6) A sandbox-scoped Gemini key must not carry an IP
+   standalone `DONE` line; never substring-match it (`"DONE" in text` also
+   matches `INCOMPLETE`). (5) The full agent transcript is persisted to the task
+   as a `run.log` artifact before teardown, because teardown deletes the
+   container and its logs. run.log shows ONLY the agent's own work, never the
+   platform bootstrap (pip, `az login --identity`, `az account set`, the base64
+   agent payload): `command_for()` does not `set -x` the bootstrap and silences
+   its stdout, AND `transcript.customer_log()` drops everything before the agent
+   loop's first marker (applied to the live feed and the persisted log). The
+   agent logs FULL tool commands/args (no [:150] cut) and full reasoning; only
+   long tool RESULTS are head+tail clipped with a spill pointer. (6) A
+   sandbox-scoped Gemini key must not carry an IP
   allowlist, or ACI's egress IP gets a 403. (7) Verification requires every
   requested deliverable file to be present and non-empty in the transcript: an
    agent that declares done but skips a file (leaving an empty artifact) is

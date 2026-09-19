@@ -276,7 +276,9 @@ for step in range(1, MAX_STEPS + 1):
         print("USAGE_TOKENS: %d" % total_tokens, flush=True)
     messages.append(msg)
     if not msg.get("tool_calls"):
-        print("agent:", (msg.get("content") or "")[:200], flush=True)
+        # Full agent reasoning (no [:200] cut): run.log is the customer-visible
+        # record of the agent's work, so show the whole message (#12b).
+        print("agent:", (msg.get("content") or ""), flush=True)
         messages.append({"role": "user", "content":
             "Continue with tools, or call declare_done if finished."})
         continue
@@ -287,7 +289,16 @@ for step in range(1, MAX_STEPS + 1):
             args = json.loads(fn.get("arguments") or "{}")
         except ValueError:
             args = {}
-        print(f"tool: {name} {json.dumps(args)[:150]}", flush=True)
+        # Full tool args (no [:150] cut): the command the agent ran is the most
+        # important line in run.log; truncating it hides what it actually did.
+        # For write_file the content is also persisted verbatim as an artifact,
+        # so print only its size here (the body would flood the log).
+        if name == "write_file":
+            disp = {"path": args.get("path", ""),
+                    "content": "(%d chars; stored as the artifact)" % len(args.get("content", ""))}
+        else:
+            disp = args
+        print(f"tool: {name} {json.dumps(disp)}", flush=True)
         if name == "declare_done":
             done, summary = True, args.get("summary", "")
             break
@@ -313,7 +324,10 @@ for step in range(1, MAX_STEPS + 1):
             result = fetch_docs(args.get("url", ""))
         else:
             result = "(error) unknown tool: %s" % name
-        print(f"  -> {result[:200]}", flush=True)
+        # Full tool result via clip(): long output spills to a sandbox file with
+        # a grep pointer (recoverable), instead of a flat [:200] cut with no way
+        # to see the rest (#12b). Short results print whole.
+        print(f"  -> {clip(result)}", flush=True)
         messages.append({"role": "tool", "tool_call_id": call["id"], "content": result})
     if done or outcome:
         break
@@ -350,24 +364,26 @@ def command_for() -> list[str]:
     import base64
     b64 = base64.b64encode(SCRIPT.encode()).decode()
     return ["sh", "-c",
-            "set -x; "
+            # No `set -x` and bootstrap stdout is silenced: this preamble (pip,
+            # az login, the base64 payload) is platform plumbing, and the
+            # container's stdout becomes the customer-visible run.log. Tracing it
+            # leaks our mechanism AND dumps an ugly base64 wall. Only failures
+            # (stderr) surface here; the agent's own output starts at /tmp/agent.py.
             # azure-cli base has python3 but no pip. Bootstrap pip into a
             # self-contained dir and put it on PYTHONPATH so a partial system
             # pip can't break the import (the ACI failure mode we hit).
-            "python3 -m ensurepip 2>&1 | tail -3; "
-            "python3 -m pip install --target=/app/pylibs openai 2>&1 | tail -5; "
+            "python3 -m ensurepip >/dev/null 2>&1; "
+            "python3 -m pip install --quiet --target=/app/pylibs openai >/dev/null 2>&1; "
             "export PYTHONPATH=/app/pylibs; "
-            "python3 -c 'import openai; print(\"openai\", openai.__version__)' 2>&1; "
             # Authenticate as the attached per-RG managed identity, THEN set the
             # subscription context. Login used --allow-no-subscriptions, so without
             # `az account set` the CLI has no default subscription and any command
             # needing one (az cosmosdb, az account list) resolves against the
             # tenant and fails SubscriptionNotFound. provision() already blocked
             # until the identity's role assignment propagated, so these succeed.
-            "az login --identity --allow-no-subscriptions 2>&1 | tail -2 || true; "
+            "az login --identity --allow-no-subscriptions >/dev/null 2>&1 || true; "
             # No quotes around the id: it is a GUID (safe), and baked-in quotes
             # made az account set fail with a malformed subscription id (real bug).
-            "az account set --subscription $AZURE_SUBSCRIPTION_ID 2>&1 | tail -2 || true; "
-            "az account show 2>&1 | tail -3 || true; "
+            "az account set --subscription $AZURE_SUBSCRIPTION_ID >/dev/null 2>&1 || true; "
             f"echo {b64} | base64 -d > /tmp/agent.py && "
             "PYTHONPATH=/app/pylibs python3 /tmp/agent.py"]
