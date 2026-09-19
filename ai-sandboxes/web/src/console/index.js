@@ -17,7 +17,11 @@ import { loadEmbers } from './inspector.js';
 
 /* ---------- boot ---------- */
 
-if (list) { // not on /app: the imported DOM refs are null-guarded below
+// Called by the /app gate (pages/app.astro) only after auth confirms a user, so
+// anonymous visitors never boot the console. Guarded on list so importing the
+// module off-/app is a no-op.
+export function boot() {
+  if (!list) return; // not on /app: nothing to do
   loadEmbers();
   refreshList().then(function () {
     if (S.tasks.length) select(S.tasks[0].id);
