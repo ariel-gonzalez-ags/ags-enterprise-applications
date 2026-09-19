@@ -169,7 +169,7 @@ async def test_teardown_proof_stored_as_artifact():
         sess.add(t); await sess.commit()
     from app import executors as ex_mod
     orig = ex_mod.get_executor
-    ex_mod.get_executor = lambda settings: AzureExecutor(settings, az_clients=az)
+    ex_mod.get_executor = lambda settings, provider="": AzureExecutor(settings, az_clients=az)
     try:
         await runner._run_real("td-proof", s)
     finally:
@@ -222,7 +222,7 @@ async def test_abort_records_real_meters_and_proof():
         await sess.commit()
     from app import executors as ex_mod
     orig = ex_mod.get_executor
-    ex_mod.get_executor = lambda settings: _FakeEx()
+    ex_mod.get_executor = lambda settings, provider="": _FakeEx()
     try:
         drive = asyncio.ensure_future(runner._run_real("abort-meters", s))
         await asyncio.sleep(0.05)
@@ -647,7 +647,7 @@ async def test_blocked_run_lands_terminal_not_verified():
         await sess.commit()
     from app import executors as ex_mod
     orig = ex_mod.get_executor
-    ex_mod.get_executor = lambda settings: AzureExecutor(settings, az_clients=az)
+    ex_mod.get_executor = lambda settings, provider="": AzureExecutor(settings, az_clients=az)
     try:
         await runner._run_real("blocked-1", s)
     finally:

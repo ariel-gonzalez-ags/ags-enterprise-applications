@@ -13,7 +13,7 @@ from typing import AsyncIterator, Protocol
 class RunPayload:
     """Everything an executor needs to perform one run, already resolved."""
     run_id: str                 # unique label for the sandbox (container/ACI name)
-    image: str                  # template image ref (see images.py gallery)
+    image: str                  # cloud-variant image ref (azure_exec.image_for_provider)
     commands: list[str]         # shell commands, run in order, in the sandbox
     env: dict[str, str] = field(default_factory=dict)
     timeout_seconds: int = 1800  # guardrail: hard ceiling on the whole run

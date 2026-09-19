@@ -194,7 +194,10 @@ async def _run_real(task_id: str, settings) -> None:
             timeout_seconds=max(60, min(int(task.max_hours or 4) * 3600, 4 * 3600)),
         )
 
-    executor = get_executor(settings)
+    # Route the backend on the task's target cloud. azure is the only wired
+    # backend; another provider raises a clear error here rather than silently
+    # running on Azure. (Image selection per provider happens in the runloop.)
+    executor = get_executor(settings, provider=task.provider)
     killswitch.register(task_id, executor)  # so the abort endpoint can force-teardown it
     try:
         done = 0

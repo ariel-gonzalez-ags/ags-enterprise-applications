@@ -15,7 +15,7 @@ import time
 from ..base import RunPayload, RunResult
 from . import agent_runner, lifecycle, tags as tagger
 from . import transcript as transcript_log
-from ._const import _AGENT_IMAGE, BUILD, _blocking
+from ._const import BUILD, _blocking, image_for_provider
 
 
 async def run_executor(self, payload: RunPayload) -> "AsyncIterator[str]":
@@ -72,8 +72,13 @@ async def run_executor(self, payload: RunPayload) -> "AsyncIterator[str]":
             }
             emit("Launching the agent inside the sandbox (RBAC-scoped)...")
             yield log[-1]
+            # The image's cloud CLI matches the task's provider (aws/gcp/azure);
+            # base toolchain + agent are shared. This is the image axis of
+            # selection; the backend axis (which cloud hosts the sandbox) is
+            # get_executor's job and is azure-only until a 2nd backend exists.
+            image = image_for_provider(payload.env.get("AGS_PROVIDER", "azure"))
             await _blocking(lifecycle.launch_agent, az, self._settings, sb,
-                            image=_AGENT_IMAGE, env=env,
+                            image=image, env=env,
                             command=agent_runner.command_for())
 
             emit("Agent is working (this can take a few minutes)...")
