@@ -63,9 +63,13 @@
     }
     return fetch(path, opts).then(function (r) {
       if (!r.ok) {
-        var err = new Error('HTTP ' + r.status);
-        err.status = r.status;
-        throw err;
+        // Surface the server's reason (FastAPI puts it in `detail`) so a refused
+        // action tells the user WHY (e.g. the rate-limit 429), not a bare status.
+        return r.json().catch(function () { return {}; }).then(function (d) {
+          var err = new Error((d && d.detail) ? d.detail : ('HTTP ' + r.status));
+          err.status = r.status;
+          throw err;
+        });
       }
       // 204 No Content (e.g. DELETE) has no body; parsing it as JSON throws
       // "Unexpected end of JSON input". Return undefined for empty responses.
@@ -299,6 +303,20 @@
     thread.appendChild(el);
     thread.scrollTop = thread.scrollHeight;
     return el;
+  }
+
+  /* A transient system notice in the thread (e.g. a refused approve). Distinct
+   * from planner messages (not persisted, styled as a warning); auto-clears on
+   * the next real re-render. This is the feedback for an action the server
+   * refused, so it never looks like the app silently did nothing. */
+  function showNotice(text) {
+    var old = thread.querySelector('.msg.notice');
+    if (old) old.remove();
+    var el = document.createElement('div');
+    el.className = 'msg notice';
+    el.innerHTML = '<div class="msg-body">' + esc(text) + '</div>';
+    thread.appendChild(el);
+    thread.scrollTop = thread.scrollHeight;
   }
 
   // Plan card interactions: toggling options / adding a custom deliverable
@@ -840,7 +858,11 @@
     busy = true;
     api('/api/tasks/' + encodeURIComponent(selectedId) + '/approve', { method: 'POST' })
       .then(function () { return select(selectedId).then(refreshList); })
-      .catch(function () {})
+      .catch(function (e) {
+        // Refused (402 insufficient Embers, 429 rate limit, 409 state): tell the
+        // user WHY in the thread instead of silently doing nothing.
+        showNotice((e && e.message) ? e.message : 'Could not start the run.');
+      })
       .then(function () { busy = false; });
   });
 

@@ -209,6 +209,11 @@ for step in range(1, MAX_STEPS + 1):
     usage = getattr(resp, "usage", None)
     if usage is not None:
         total_tokens += int(getattr(usage, "total_tokens", 0) or 0)
+        # Emit the running token total every step, not just at clean completion:
+        # a hard abort (kill switch) kills the process mid-loop, so the final
+        # print at the bottom never runs. The executor takes the LAST USAGE_TOKENS
+        # line, so a stopped run still bills the tokens it actually burned.
+        print("USAGE_TOKENS: %d" % total_tokens, flush=True)
     messages.append(msg)
     if not msg.get("tool_calls"):
         print("agent:", (msg.get("content") or "")[:200], flush=True)

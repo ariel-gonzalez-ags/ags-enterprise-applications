@@ -31,7 +31,7 @@ _AGENT_IMAGE = "mcr.microsoft.com/azure-cli:latest"
 # Bumped on each behavior change so a running container can prove which code it
 # has (guards against the stale-image churn we hit while debugging). Surfaced
 # in the first progress line.
-BUILD = "azexec-2026-09-18.2"  # + non-blocking abort teardown + GeneratorExit-safe finally
+BUILD = "azexec-2026-09-18.3"  # + per-step USAGE_TOKENS so hard aborts bill tokens
 
 
 async def _blocking(fn, *args, **kwargs):
@@ -49,6 +49,7 @@ class AzureExecutor:
         self._result = RunResult(ok=False, exit_code=-1, log="", note="not run")
         self._sb = None        # live sandbox, so abort() can tear it down
         self.aborted = False
+        self._teardown_proof = {}  # set in run()'s finally after teardown (#13)
 
     def result(self) -> RunResult:
         return self._result
@@ -237,8 +238,14 @@ class AzureExecutor:
             # a synchronous teardown both keep the RG from leaking.
             try:
                 proof = await _blocking(lifecycle.teardown, az, self._settings, sb)
+                self._teardown_proof = proof
+                # Stamp the proof onto the result now (the result was built before
+                # teardown ran, so it could not carry it then). (#13)
+                self._result.teardown_proof = proof
                 msg = (f"Sandbox {proof['resource_group']} torn down in "
                        f"{proof['duration_seconds']}s; cost event recorded.")
+                if not proof.get("verified_gone"):
+                    msg += " WARNING: teardown could not confirm the RG is gone."
                 emit(msg)
                 try:
                     yield msg

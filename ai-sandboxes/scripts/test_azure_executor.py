@@ -38,6 +38,12 @@ class _FakeRG:
     def begin_delete(self, name):
         self.deleted.append(name)
         return mock.Mock(result=lambda: None)
+    def get(self, name):
+        # Model Azure: a GET on a deleted RG raises (404). The teardown proof
+        # relies on this to confirm the sandbox is really gone.
+        if name in self.deleted:
+            raise Exception("ResourceGroupNotFound")
+        return mock.Mock(name=name)
 
 
 class _FakeMSI:
@@ -141,10 +147,99 @@ def test_teardown_returns_cost_event():
     proof = lifecycle.teardown(az, s, sb)
     assert sb.rg_name in az["resource"].resource_groups.deleted
     assert proof["teardown_complete"] is True
+    assert proof["verified_gone"] is True  # post-delete GET confirmed the RG is gone
     assert proof["org_id"] == "org-9" and proof["owner_sub"] == "owner-9"
     assert proof["resource_group"] == sb.rg_name
     assert proof["duration_seconds"] >= 0
-    print("ok    teardown: RG deleted + cost/teardown proof row produced")
+    print("ok    teardown: RG deleted + verified-gone proof recorded (#13)")
+
+
+async def test_teardown_proof_stored_as_artifact():
+    # End to end: a verified real run persists teardown.json proof (the RG was
+    # confirmed deleted) as an artifact on the task. (#13)
+    from app.executors.azure_exec.executor import AzureExecutor
+    import app.runner as runner
+    s = _settings(EXECUTOR_BACKEND="azure", GEMINI_API_KEY="k")
+    db.init(os.environ["DB_PATH"]); await db.create_schema()
+    az = _fake_az(log_text=_TRANSCRIPT, state="Succeeded")
+    from app.models import Task
+    async with db.session() as sess:
+        t = Task(id="td-proof", owner_sub="owner-proof", title="x",
+                 state="running", formats=["markdown"])
+        sess.add(t); await sess.commit()
+    from app import executors as ex_mod
+    orig = ex_mod.get_executor
+    ex_mod.get_executor = lambda settings: AzureExecutor(settings, az_clients=az)
+    try:
+        await runner._run_real("td-proof", s)
+    finally:
+        ex_mod.get_executor = orig
+    async with db.session() as sess:
+        from app.models import Artifact
+        from sqlalchemy import select
+        arts = (await sess.execute(select(Artifact).where(Artifact.task_id == "td-proof"))).scalars().all()
+        names = {a.filename for a in arts}
+        proof = next((a for a in arts if a.filename == "teardown.json"), None)
+        assert "teardown.json" in names, f"no teardown proof artifact in {names}"
+        assert '"verified_gone": true' in proof.content
+        t2 = await sess.get(Task, "td-proof")
+        assert t2.state == "verified", t2.state
+    print("ok    teardown proof stored as teardown.json artifact on a verified run (#13)")
+
+
+async def test_abort_records_real_meters_and_proof():
+    # Regression for the abort race: when a run is stopped mid-flight, the runner
+    # must read the SETTLED result (real sandbox_seconds/tokens + teardown proof),
+    # not the init stub. The old break-early read result() before the executor's
+    # generator finished, recording 0 Embers and no teardown.json.
+    import app.runner as runner
+    from app.executors.base import RunResult
+    from app.models import Artifact, Task
+    from sqlalchemy import select
+    s = _settings(EXECUTOR_BACKEND="azure", GEMINI_API_KEY="k")
+    db.init(os.environ["DB_PATH"]); await db.create_schema()
+
+    class _FakeEx:
+        def __init__(self): self.live_log = []; self._res = None
+        async def run(self, payload):
+            for i in range(3):
+                self.live_log.append(f"line {i}"); yield f"line {i}"
+                await asyncio.sleep(0.03)
+            # settle the real result AFTER teardown, like the real executor does
+            self._res = RunResult(ok=False, exit_code=1, log="x", note="aborted by user",
+                                  sandbox_seconds=47, llm_tokens=1200,
+                                  teardown_proof={"resource_group": "rg-x",
+                                                  "verified_gone": True,
+                                                  "duration_seconds": 47})
+        def result(self):
+            return self._res or RunResult(ok=False, exit_code=-1, log="",
+                                          note="not run", sandbox_seconds=0, llm_tokens=0)
+        def abort(self): pass
+
+    async with db.session() as sess:
+        sess.add(Task(id="abort-meters", owner_sub="u", title="x",
+                      state="running", formats=["markdown"]))
+        await sess.commit()
+    from app import executors as ex_mod
+    orig = ex_mod.get_executor
+    ex_mod.get_executor = lambda settings: _FakeEx()
+    try:
+        drive = asyncio.ensure_future(runner._run_real("abort-meters", s))
+        await asyncio.sleep(0.05)
+        runner.killswitch.request_abort("abort-meters")
+        await asyncio.wait_for(drive, timeout=10)
+    finally:
+        ex_mod.get_executor = orig
+    async with db.session() as sess:
+        t = await sess.get(Task, "abort-meters")
+        assert t.sandbox_seconds == 47 and t.llm_tokens == 1200, \
+            f"aborted run must bill real meters, got {t.sandbox_seconds}s/{t.llm_tokens}tok"
+        assert t.embers_spent > 0, "aborted run must burn some Embers"
+        names = {a.filename for a in (await sess.execute(
+            select(Artifact).where(Artifact.task_id == "abort-meters"))).scalars().all()}
+        assert "teardown.json" in names, f"aborted run must store teardown proof, got {names}"
+    print("ok    abort records real meters + teardown proof, not the init stub")
+
 
 
 def test_azure_configured_gate():
@@ -180,7 +275,11 @@ async def test_agent_loop_declares_done():
                        "tool_calls": None}
         m = mock.Mock()
         m.model_dump = lambda mode="json": dict(payload)
-        return mock.Mock(choices=[mock.Mock(message=m)])
+        r = mock.Mock(choices=[mock.Mock(message=m)])
+        # Mirror the real SDK: usage is None unless the caller requests it, so
+        # the agent's token accumulation skips these debug-path responses.
+        r.usage = None
+        return r
 
     async def _create(**kw):
         calls["n"] += 1
@@ -281,7 +380,43 @@ async def test_embers():
     from app.executors.azure_exec import transcript
     assert transcript.usage_tokens("line\nUSAGE_TOKENS: 4321\n") == 4321
     assert transcript.usage_tokens("no usage here") == 0
+    # The agent prints a RUNNING total each step so a hard abort still leaves a
+    # count; the parser takes the LAST one (the most complete total).
+    assert transcript.usage_tokens(
+        "USAGE_TOKENS: 100\nUSAGE_TOKENS: 250\nUSAGE_TOKENS: 4321\n") == 4321
     print("ok    embers: rate, trial grant, afford gate, burn, usage parse")
+
+
+async def test_rate_limits():
+    # TODO #6: per-user caps. Concurrent: N running tasks hit the cap. Daily:
+    # sandbox_seconds summed over the UTC day vs the hours cap.
+    from app import ratelimit
+    from app.models import Task
+    s = _settings(RATELIMIT_MAX_CONCURRENT="2", RATELIMIT_MAX_SANDBOX_HOURS_DAY="1")
+    db.init(os.environ["DB_PATH"]); await db.create_schema()
+    # under both caps -> allowed
+    ok, _ = await ratelimit.check_rate_limits("rl-user", s)
+    assert ok is True
+    # add 2 running tasks -> concurrent cap blocks the next
+    async with db.session() as sess:
+        for i in range(2):
+            sess.add(Task(id=f"rl-c{i}", owner_sub="rl-user", title="x", state="running"))
+        await sess.commit()
+    ok, reason = await ratelimit.check_rate_limits("rl-user", s)
+    assert ok is False and "at once" in reason
+    # daily-hours: a finished task today with 3600s (= the 1h cap) blocks
+    async with db.session() as sess:
+        t = await sess.get(Task, "rl-c0")
+        t.state = "verified"; t.sandbox_seconds = 3600  # exactly the 1h cap
+        await sess.commit()
+    # concurrent is now under (only 1 running) but daily is at the cap
+    ok, reason = await ratelimit.check_rate_limits("rl-user", s)
+    assert ok is False and "daily" in reason.lower(), reason
+    # limits off (0) -> always allowed even at the cap
+    s_off = _settings(RATELIMIT_MAX_CONCURRENT="0", RATELIMIT_MAX_SANDBOX_HOURS_DAY="0")
+    ok, _ = await ratelimit.check_rate_limits("rl-user", s_off)
+    assert ok is True
+    print("ok    rate limits: concurrent cap + daily sandbox-hours cap + off-when-zero (#6)")
 
 
 _TRANSCRIPT = """agent: planning
@@ -398,9 +533,12 @@ async def main():
     test_context_helpers()
     await test_compact_shrinks_history()
     await test_embers()
+    await test_rate_limits()
     await test_executor_end_to_end_in_container()
     await test_executor_failed_run_returns_not_ok()
     await test_executor_abort_tears_down()
+    await test_teardown_proof_stored_as_artifact()
+    await test_abort_records_real_meters_and_proof()
     print("\nAzure executor: all checks passed (mocked, no spend)")
 
 

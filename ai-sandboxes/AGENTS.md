@@ -131,7 +131,12 @@ the user before implementing**. See "Evolution path".
   every 6 steps to fight lost-in-the-middle drift. The agent also has a
   `fetch_docs(url)` tool to consult current official docs (MS Learn, terraform
   registry) instead of guessing from training data. Patterns borrowed from
-  OpenCode/Claude Code/OpenClaw harnesses.
+  OpenCode/Claude Code/OpenClaw harnesses. Both loops also accumulate
+  `total_tokens` from each response's `usage` and emit a running
+  `USAGE_TOKENS: <n>` line EVERY step (not just at clean completion): a hard
+  abort kills the agent mid-loop, so the last printed running total is what the
+  executor's `transcript.usage_tokens` (last-match) parses. Keep the token
+  reporting in sync across both files too.
   **Embers (cost meter).** 1 Ember = $0.01, the customer-facing unit. Every run
   burns Embers from two meters we control exactly: sandbox-seconds (we create
   and destroy the sandbox) + agent LLM tokens (Gemini returns `usage`; the
@@ -187,7 +192,17 @@ the user before implementing**. See "Evolution path".
   coroutine and the run loop's. The console shows a red "Stop run" button in the
   Sandbox stage panel (RunInspector), behind the shared confirm dialog
   (`askConfirm` sets title + action label per call now that the dialog is shared
-  by delete and stop-run).
+   by delete and stop-run).
+  **Rate limits (TODO #6).** `app/ratelimit.py` caps a single user's blast radius
+   even if they beat the card gate: `RATELIMIT_MAX_CONCURRENT` running sandboxes
+   at once, and `RATELIMIT_MAX_SANDBOX_HOURS_DAY` of sandbox compute per UTC day
+   (summed from `Task.sandbox_seconds`). Both checked at `/approve` (429), both
+   off when 0. They cap *velocity*; the Ember gate caps *total spend*.
+  **Teardown proof (TODO #13).** `lifecycle.teardown` does not just delete the
+   resource group; it then GETs it and only reports `verified_gone` once Azure
+   404s (eventual-consistency retry). The runner stores that proof as a
+   `teardown.json` artifact on verified and aborted runs, so "verified" also
+   means "provably nothing left running up cost."
 
 ## Directory map
 
@@ -214,6 +229,7 @@ the user before implementing**. See "Evolution path".
 │       ├── planner.py    ← Gemini via OpenAI-compat endpoint, JSON contract
 │       ├── runner.py     ← run state machine (simulated timer OR real engine)
 │       ├── simfiles.py   ← simulated-run artifact generation helpers
+│       ├── ratelimit.py  ← per-user rate limits (concurrent + daily sandbox-hours)
 │       ├── killswitch.py ← abort registry: executor handles + cancel flags (TODO #7)
 │       ├── executors/    ← executor seam: base.py (RunPayload/RunResult contract),
 │       │   │               images.py (template gallery). get_executor() picks the
@@ -352,7 +368,7 @@ that. Marketing pages stay prerendered (static) regardless.
 | `POST /api/tasks/{id}/messages` `{text}` | **202 instantly**; planner replies in background, lands in thread |
 | `PATCH /api/tasks/{id}` `{formats, provider, model}` | user edits deliverables / target cloud / planner model (drafting/planned only); formats slug+dedupe (min 1), provider and model validated against allowlists |
 | `DELETE /api/tasks/{id}` | 204; drafting/planned only. running/verified/delivered are records: 409 |
-| `POST /api/tasks/{id}/approve` | `planned` → `running`, spawns the simulated run |
+| `POST /api/tasks/{id}/approve` | `planned` → `running`, spawns the run. Gates in order: 402 if the Ember balance is short, 429 if a rate limit is hit |
 | `POST /api/tasks/{id}/abort` | **kill switch** (running only, else 409): tears the sandbox down now via `killswitch.request_abort`; the run returns to `planned` and the Ember burn up to the kill is still settled |
 | `GET /api/tasks/{id}/artifacts/{filename}` | artifact contents, owner-scoped; `Content-Disposition: attachment`, `no-store` |
 | `GET /api/tasks/{id}/events` | SSE stream; one `{"changed": true}` nudge per state change, owner-scoped |

@@ -16,16 +16,19 @@ def declared_done(text: str) -> bool:
 
 
 def usage_tokens(text: str) -> int:
-    """Total LLM tokens the agent reported via its USAGE_TOKENS line. 0 if the
-    agent crashed before printing it (we still bill for compute seconds)."""
+    """Total LLM tokens the agent reported via its USAGE_TOKENS lines. The agent
+    prints a RUNNING total every step (so a hard abort still leaves the last
+    known count in the log), so we take the LAST one. 0 if none (the agent
+    crashed before any LLM call returned; we still bill for compute seconds)."""
+    total = 0
     for line in text.splitlines():
         line = line.strip()
         if line.startswith("USAGE_TOKENS:"):
             try:
-                return int(line.split(":", 1)[1].strip())
+                total = int(line.split(":", 1)[1].strip())
             except ValueError:
-                return 0
-    return 0
+                pass
+    return total
 
 
 def files_from_log(text: str) -> dict[str, str]:

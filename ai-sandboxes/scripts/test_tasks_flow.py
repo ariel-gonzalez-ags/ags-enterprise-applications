@@ -156,6 +156,46 @@ async def main():
             acct.balance = 10000; await s.commit()
         print("ok    ember gate: insufficient balance refuses approve (402)")
 
+        # 5c. Rate limits (TODO #6): a user at the concurrent-sandbox cap cannot
+        # approve another run (429). Count how many are already running (earlier
+        # steps leave some), top up to the cap, then one more approve is refused.
+        from app import ratelimit as _rl
+        from app.config import load as _load2
+        from sqlalchemy import select, func
+        cap = _load2().ratelimit_max_concurrent
+        assert cap == 2
+        async with db.session() as s:
+            running_now = (await s.execute(
+                select(func.count()).select_from(Task)
+                .where(Task.owner_sub == sub, Task.state == "running"))).scalar() or 0
+        made = []
+        for i in range(max(0, cap - running_now)):
+            rr = await c.post("/api/tasks", json={"title": f"rl{i}", "provider": "azure"})
+            rid = rr.json()["id"]
+            async with db.session() as s:
+                t = await s.get(Task, rid); t.state = "running"; await s.commit()
+            made.append(rid)
+        # now at the cap: a fresh approve is refused 429
+        rr = await c.post("/api/tasks", json={"title": "rl-over", "provider": "azure"})
+        over_tid = rr.json()["id"]
+        async with db.session() as s:
+            t = await s.get(Task, over_tid); t.state = "planned"; await s.commit()
+        r = await c.post(f"/api/tasks/{over_tid}/approve")
+        assert r.status_code == 429 and "running" in r.json()["detail"].lower(), r.text
+        # freeing a slot (one finishes) lets it through again
+        async with db.session() as s:
+            t = await s.get(Task, kill_tid); t.state = "verified"; await s.commit()
+        with mock.patch("app.routers.tasks.runner.spawn"):
+            r = await c.post(f"/api/tasks/{over_tid}/approve")
+        assert r.status_code == 200, r.text
+        # clean up: return leftover running tasks to planned so later checks pass
+        async with db.session() as s:
+            for rid in made + [over_tid]:
+                t = await s.get(Task, rid)
+                if t and t.state == "running": t.state = "planned"
+            await s.commit()
+        print("ok    rate limits: concurrent cap refuses a run over the cap (429), frees on finish")
+
         import app.runner as runner
         runner._TICK_SECONDS = 0  # speed up the simulation
         await runner.run_task(tid)  # run synchronously for the test

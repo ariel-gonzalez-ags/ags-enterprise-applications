@@ -136,12 +136,25 @@ def launch_agent(az, settings, sb: Sandbox, image: str, env: dict[str, str],
 
 def teardown(az, settings, sb: Sandbox) -> dict:
     """Delete the whole resource group (removes the identity, role assignment,
-    container, and everything the agent created) and return a teardown proof +
-    cost ledger row."""
+    container, and everything the agent created), then VERIFY it is actually
+    gone, and return a teardown proof + cost ledger row. The post-delete
+    existence check is the teardown PROOF (#13): teardown_complete is only true
+    when Azure confirms the RG no longer exists, so 'verified' also means
+    'provably nothing left running up cost'."""
     poller = az["resource"].resource_groups.begin_delete(sb.rg_name)
     poller.result()
     destroyed_at = int(time.time())
     duration_s = destroyed_at - sb.created_at
+    # Prove it: after delete, a GET on the RG must 404. Retry briefly because
+    # Azure's delete is eventually consistent.
+    gone = False
+    for _ in range(6):
+        try:
+            az["resource"].resource_groups.get(sb.rg_name)
+        except Exception:
+            gone = True  # a raise on GET = the RG no longer exists
+            break
+        time.sleep(2)
     return {
         "resource_group": sb.rg_name,
         "run_id": sb.run_id,
@@ -153,7 +166,9 @@ def teardown(az, settings, sb: Sandbox) -> dict:
         "duration_seconds": duration_s,
         # Estimated until reconciled with Azure Cost Management (by tags).
         "estimated_usd": 0.0,
-        "teardown_complete": True,
+        # Teardown proof: true only when Azure confirmed the RG is gone.
+        "teardown_complete": gone,
+        "verified_gone": gone,
     }
 
 

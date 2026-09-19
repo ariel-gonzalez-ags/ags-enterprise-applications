@@ -15,6 +15,22 @@ async def _say(s, task_id: str, text: str) -> None:
     s.add(Message(task_id=task_id, role="agent", text=text))
 
 
+def _store_teardown_proof(s, task_id: str, res) -> None:
+    """Persist the teardown proof (#13) as an artifact when the executor
+    confirmed the sandbox is gone. This is the evidence behind 'verified also
+    means provably nothing left running up cost'. Skipped when the backend gave
+    no proof (simulated runs) or could not confirm deletion."""
+    proof = getattr(res, "teardown_proof", None) or {}
+    if not proof.get("verified_gone"):
+        return
+    import json
+    body = json.dumps(proof, indent=2)
+    s.add(Artifact(task_id=task_id, filename="teardown.json", kind="json",
+                   size=f"{max(1, len(body) // 1024)} KB",
+                   note=f"sandbox {proof.get('resource_group', '')} confirmed deleted",
+                   content=body))
+
+
 async def run_task(task_id: str, settings=None) -> None:
     # Real execution engine (stage 1): when enabled, hand the run to the
     # configured executor and verify by idempotency. Otherwise the legacy
@@ -146,6 +162,12 @@ async def _run_real(task_id: str, settings) -> None:
         task = await s.get(Task, task_id)
         if task is None or task.state != "running":
             return
+        # A new run supersedes the previous run's artifacts. Clear them so a
+        # re-run doesn't pile up duplicate-filename artifacts (16 run.log rows
+        # on one task), which both clutters the panel and broke the viewer
+        # (the by-filename endpoint crashed on MultipleResultsFound).
+        from sqlalchemy import delete
+        await s.execute(delete(Artifact).where(Artifact.task_id == task_id))
         formats = list(task.formats or []) or ["markdown"]
         # resolve every accepted format to a (filename, format) pair; custom
         # formats resolve too (the executor's agent produces these as files)
@@ -193,9 +215,15 @@ async def _run_real(task_id: str, settings) -> None:
     try:
         done = 0
         async for line in executor.run(payload):
-            if killswitch.is_aborted(task_id):
-                break  # kill switch: stop consuming output; executor.abort()
-                       # already tore the sandbox down
+            # Kill switch: once aborted, STOP updating progress but KEEP draining
+            # the generator to the end. The executor's abort() tears down in the
+            # background and the generator then settles self._result with the real
+            # meters (sandbox_seconds, teardown_proof). Breaking early here read
+            # result() before that settle, returning the init stub (0 seconds),
+            # which is why an aborted run recorded 0 Embers and no teardown proof.
+            aborted = killswitch.is_aborted(task_id)
+            if aborted:
+                continue
             done += 1
             stage = _stage_for_line(line)
             async with db.session() as s:
@@ -258,6 +286,7 @@ async def _abort_run(task_id: str, res, settings) -> None:
         task.run_stage = ""
         task.checks_passed = 0
         task.state = "planned"  # back to shapeable; an aborted run is no record
+        _store_teardown_proof(s, task_id, res)
         await _say(s, task_id,
                    f"Run stopped by you. Sandbox torn down immediately. "
                    f"Cost to that point: {burn_embers} Embers "
@@ -294,6 +323,7 @@ async def _finish_run(task_id: str, files, res, settings) -> None:
             s.add(Artifact(task_id=task_id, filename="verify.log", kind="log",
                            size=f"{max(1, len(res.log) // 1024)} KB",
                            note="execution + verification evidence", content=res.log))
+            _store_teardown_proof(s, task_id, res)
             task.checks_passed = task.checks_total
             task.state = "verified"
             await _say(s, task_id,

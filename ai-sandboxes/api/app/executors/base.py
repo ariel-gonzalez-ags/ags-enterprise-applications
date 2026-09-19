@@ -33,6 +33,10 @@ class RunResult:
     # tokens the agent burned. Zero for simulated runs (no real resource used).
     sandbox_seconds: int = 0
     llm_tokens: int = 0
+    # Teardown proof (#13): when the executor confirmed the sandbox is gone, this
+    # carries the evidence (RG name, destroyed_at, verified_gone). Empty when the
+    # backend does not produce a proof (e.g. simulated runs).
+    teardown_proof: dict = field(default_factory=dict)
 
 
 class Executor(Protocol):

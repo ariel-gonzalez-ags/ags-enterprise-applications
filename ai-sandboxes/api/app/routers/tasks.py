@@ -7,7 +7,7 @@ from fastapi.responses import PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from .. import db, embers, events, killswitch, planner, runner
+from .. import db, embers, events, killswitch, planner, ratelimit, runner
 from ..config import Settings
 from ..models import Artifact, Message, Task
 from ._common import require_user, settings_of
@@ -127,10 +127,14 @@ async def download_artifact(task_id: str, filename: str, user: dict = Depends(_u
         t = await s.get(Task, task_id)
         if t is None or t.owner_sub != user["sub"]:
             raise HTTPException(404, "task not found")
+        # A task re-run used to pile up same-filename artifacts; the runner now
+        # clears them per run, but serve the LATEST (highest id) as a safety net
+        # for any pre-existing duplicates instead of crashing on them.
         result = await s.execute(
             select(Artifact).where(Artifact.task_id == task_id,
-                                   Artifact.filename == filename))
-        a = result.scalar_one_or_none()
+                                   Artifact.filename == filename)
+                            .order_by(Artifact.id.desc()))
+        a = result.scalars().first()
         if a is None:
             raise HTTPException(404, "artifact not found")
         headers = {
@@ -338,6 +342,10 @@ async def approve(task_id: str, request: Request, user: dict = Depends(_user)):
             raise HTTPException(
                 402, f"insufficient Embers: balance {bal}, estimated cost {est}. "
                      "Top up to run more sandboxes.")
+        # Rate limits (TODO #6): cap velocity, not just total spend. 429.
+        ok, reason = await ratelimit.check_rate_limits(user["sub"], settings)
+        if not ok:
+            raise HTTPException(429, reason)
         t.state = "running"
         t.checks_passed = 0
         await s.commit()
