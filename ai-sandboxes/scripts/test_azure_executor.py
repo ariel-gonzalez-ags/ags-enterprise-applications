@@ -422,6 +422,10 @@ async def test_rate_limits():
 _TRANSCRIPT = """agent: planning
 tool: run_shell {"command": "az storage account create ..."}
   -> (exit 0) created
+tool: verify_outcome {"command": "az resource show --ids <id> --query properties.provisioningState"}
+VERIFY-RESULT: exit=0
+"Succeeded"
+VERIFY-END
 DONE
 SUMMARY: storage account + key vault created and tagged
 ===AGS-FILE-BEGIN:runbook.md
@@ -496,6 +500,114 @@ async def test_missing_deliverable_is_not_verified():
     print("ok    executor: declared-done with a missing deliverable is rejected, not verified")
 
 
+async def test_done_without_verify_evidence_is_not_verified():
+    # The core of the evidence contract: declare_done alone is just the agent's
+    # word. A run that writes its files and claims done but never ran a passing
+    # verify_outcome check must NOT be stamped verified, even with exit 0.
+    from app.executors.azure_exec.executor import AzureExecutor
+    s = _settings(EXECUTOR_BACKEND="azure", GEMINI_API_KEY="k")
+    base = ("DONE\nSUMMARY: built it\n"
+            "===AGS-FILE-BEGIN:runbook.md\nstuff\n===AGS-FILE-END:runbook.md\n")
+    # (a) no verify_outcome at all -> not verified
+    az = _fake_az(log_text=base, state="Succeeded", exit_code=0)
+    ex = AzureExecutor(s, az_clients=az)
+    payload = RunPayload(run_id="tv1", image="", commands=[], env={
+        "AGS_TASK": "tv1", "AGS_REQUIREMENT": "x", "AGS_OUTPUTS": "runbook.md"},
+        timeout_seconds=60)
+    async for _ in ex.run(payload):
+        pass
+    assert ex.result().ok is False, "done with no verify evidence must not verify"
+    # (b) a verify_outcome that FAILED (exit != 0) -> not verified
+    failing = ("tool: verify_outcome {\"command\": \"check\"}\n"
+               "VERIFY-RESULT: exit=1\nnot actually compliant\nVERIFY-END\n" + base)
+    az2 = _fake_az(log_text=failing, state="Succeeded", exit_code=0)
+    ex2 = AzureExecutor(s, az_clients=az2)
+    payload2 = RunPayload(run_id="tv2", image="", commands=[], env={
+        "AGS_TASK": "tv2", "AGS_REQUIREMENT": "x", "AGS_OUTPUTS": "runbook.md"},
+        timeout_seconds=60)
+    async for _ in ex2.run(payload2):
+        pass
+    assert ex2.result().ok is False, "done with a failing verify must not verify"
+    print("ok    executor: declare_done without a PASSING verify_outcome is rejected (#12)")
+
+
+async def test_verify_evidence_parser():
+    # transcript.verify_evidence: captures (exit_code, command, output) per
+    # block; empty when no verify_outcome ran. verify_log_text renders ONLY the
+    # evidence (command + pass/fail + output), not the whole transcript.
+    from app.executors.azure_exec import transcript
+    assert transcript.verify_evidence("no markers here") == []
+    ev = transcript.verify_evidence(
+        "VERIFY-RESULT: exit=0\nVERIFY-CMD: check the thing\ntrue\nVERIFY-END\n")
+    assert ev == [(0, "check the thing", "true")], ev
+    ev2 = transcript.verify_evidence(
+        "VERIFY-RESULT: exit=1\nbad\nVERIFY-END\nVERIFY-RESULT: exit=0\nok\nVERIFY-END\n")
+    assert ev2 == [(1, "", "bad"), (0, "", "ok")], ev2
+    # verify_log_text: the proof, front and center, not a transcript copy
+    vlog = transcript.verify_log_text(
+        "tool: run_shell lots of noise\nagent: working\n"
+        "VERIFY-RESULT: exit=0\nVERIFY-CMD: az check\nall good\nVERIFY-END\n")
+    assert "az check" in vlog and "PASS" in vlog and "all good" in vlog, vlog
+    assert "lots of noise" not in vlog, "verify.log must NOT contain run noise"
+    assert "no verification check" in transcript.verify_log_text("nothing")
+    print("ok    transcript: verify_evidence (exit+cmd+output) + verify_log_text is evidence-only")
+
+
+async def test_outcome_verdicts():
+    # declared_outcome: parses done / infeasible / blocked / incomplete, and
+    # INFEASIBLE/BLOCKED win over DONE (an agent that hit a wall cannot claim
+    # success). Reason + evidence are captured.
+    from app.executors.azure_exec import transcript
+    assert transcript.declared_outcome("DONE\nSUMMARY: x")[0] == "done"
+    assert transcript.declared_outcome("INCOMPLETE")[0] == "incomplete"
+    v, r, e = transcript.declared_outcome(
+        "BLOCKED: could not auth\nEVIDENCE: SubscriptionNotFound 02b976\nDONE\n")
+    assert v == "blocked" and "could not auth" in r and "SubscriptionNotFound" in e, (v, r, e)
+    v2, r2, _ = transcript.declared_outcome(
+        "INFEASIBLE: azure cannot do X\nEVIDENCE: docs say so\n")
+    assert v2 == "infeasible" and "cannot do X" in r2, (v2, r2)
+    print("ok    transcript: outcome verdicts (done/infeasible/blocked/incomplete), blocked beats done")
+
+
+async def test_blocked_run_lands_terminal_not_verified():
+    # End to end (#12): an agent that hits a platform failure and declares
+    # BLOCKED must NOT verify, must land in the terminal 'blocked' state, and
+    # must record the documented reason + evidence as the verify.log artifact.
+    import app.runner as runner
+    from app.executors.azure_exec.executor import AzureExecutor
+    from app.models import Artifact, Task
+    from sqlalchemy import select
+    s = _settings(EXECUTOR_BACKEND="azure", GEMINI_API_KEY="k")
+    db.init(os.environ["DB_PATH"]); await db.create_schema()
+    transcript = ("tool: run_shell az cosmosdb create\n  -> (exit 3) SubscriptionNotFound\n"
+                  "BLOCKED: could not create the resource\n"
+                  "EVIDENCE: SubscriptionNotFound 02b976e6\n")
+    az = _fake_az(log_text=transcript, state="Failed", exit_code=1)
+    async with db.session() as sess:
+        sess.add(Task(id="blocked-1", owner_sub="u", title="x", state="running",
+                       formats=["markdown"]))
+        await sess.commit()
+    from app import executors as ex_mod
+    orig = ex_mod.get_executor
+    ex_mod.get_executor = lambda settings: AzureExecutor(settings, az_clients=az)
+    try:
+        await runner._run_real("blocked-1", s)
+    finally:
+        ex_mod.get_executor = orig
+    async with db.session() as sess:
+        t = await sess.get(Task, "blocked-1")
+        assert t.state == "blocked", f"blocked run must land terminal 'blocked', got {t.state}"
+        arts = {a.filename: a for a in (await sess.execute(
+            select(Artifact).where(Artifact.task_id == "blocked-1"))).scalars().all()}
+        assert "verify.log" in arts, "blocked run must record the documented verdict"
+        assert "SubscriptionNotFound" in arts["verify.log"].content, \
+            "verify.log must carry the real evidence"
+    print("ok    blocked run lands terminal 'blocked' with documented evidence, not verified (#12)")
+
+
+
+
+
 async def test_executor_abort_tears_down():
     # Kill switch (TODO #7): a run whose container never finishes is aborted
     # mid-poll; abort() must force-teardown the RG and the run must report not-ok.
@@ -536,6 +648,11 @@ async def main():
     await test_rate_limits()
     await test_executor_end_to_end_in_container()
     await test_executor_failed_run_returns_not_ok()
+    await test_missing_deliverable_is_not_verified()
+    await test_done_without_verify_evidence_is_not_verified()
+    await test_verify_evidence_parser()
+    await test_outcome_verdicts()
+    await test_blocked_run_lands_terminal_not_verified()
     await test_executor_abort_tears_down()
     await test_teardown_proof_stored_as_artifact()
     await test_abort_records_real_meters_and_proof()

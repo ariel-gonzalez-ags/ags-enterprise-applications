@@ -164,6 +164,11 @@ import { providers } from '../content/console.js';
   .task-list :global(.s-running) { color: var(--accent); border-color: rgba(240, 86, 35, .35) }
   .task-list :global(.s-verified) { color: var(--muted) }
   .task-list :global(.s-delivered) { color: var(--muted2) }
+  /* Honest non-success verdicts (#12): infeasible = the ask can't be done,
+     blocked = the platform failed it. Both terminal records with documented
+     evidence; shown in warn/red so they read as outcomes, not successes. */
+  .task-list :global(.s-infeasible) { color: var(--warn); border-color: rgba(255, 177, 132, .35) }
+  .task-list :global(.s-blocked) { color: var(--red); border-color: rgba(229, 72, 77, .35) }
 
   .confirm { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 70; display: grid; place-items: center; padding: 24px }
   .confirm[hidden] { display: none }

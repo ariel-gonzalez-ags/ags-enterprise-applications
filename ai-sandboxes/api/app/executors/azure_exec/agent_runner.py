@@ -73,6 +73,25 @@ def write_file(path, content):
     except Exception as e:
         return f"(error) {type(e).__name__}: {e}"
 
+def verify_outcome(command):
+    # Run the agent's chosen verification check and emit its REAL exit code +
+    # output under VERIFY markers the platform parses. This is the evidence
+    # that turns "the agent claims it verified" into "a check actually ran and
+    # passed". The platform only stamps verified when a VERIFY-RESULT exits 0.
+    try:
+        p = subprocess.run(command, shell=True, capture_output=True,
+                           text=True, timeout=300)
+        out = (p.stdout + p.stderr).strip()
+        code = p.returncode
+    except Exception as e:
+        out = "%s: %s" % (type(e).__name__, e)
+        code = -1
+    print("VERIFY-RESULT: exit=%d" % code, flush=True)
+    print("VERIFY-CMD: %s" % command.strip(), flush=True)
+    print(out[:4000], flush=True)
+    print("VERIFY-END", flush=True)
+    return clip("(exit %d) %s" % (code, out))
+
 def fetch_docs(url):
     # Pull a doc page and return a trimmed excerpt, so the agent consults
     # current official docs instead of guessing from training data.
@@ -145,10 +164,38 @@ TOOLS = [
         "confirm current resource/provider arguments instead of guessing.",
         "parameters": {"type": "object", "properties": {"url": {"type": "string"}},
                        "required": ["url"]}}},
+    {"type": "function", "function": {"name": "verify_outcome", "description":
+        "Prove the outcome holds by running a check command you choose, "
+        "appropriate to whatever the task built (query the resource, hit the "
+        "endpoint, run the assertion). MANDATORY before declare_done: "
+        "the run is ONLY verified if at least one verify_outcome exits 0. Pick "
+        "a check that actually exercises the requirement; its real output is "
+        "captured as evidence the user reads.",
+        "parameters": {"type": "object", "properties": {"command": {"type": "string"}},
+                       "required": ["command"]}}},
     {"type": "function", "function": {"name": "declare_done", "description":
-        "Declare the outcome achieved and verified.",
+        "Declare the outcome achieved and verified. ONLY call this after the work "
+        "is truly done AND a verify_outcome check passed.",
         "parameters": {"type": "object", "properties": {"summary": {"type": "string"}},
                        "required": ["summary"]}}},
+    {"type": "function", "function": {"name": "declare_infeasible", "description":
+        "Declare the task CANNOT be done as asked, due to a documented limitation "
+        "(an Azure restriction, a docs-stated constraint, a hard conflict in the "
+        "requirement). Use this when the ask itself is impossible, NOT when the "
+        "sandbox/platform failed. You MUST give a concrete reason and cite real "
+        "evidence (the exact error, or the docs limitation). Never fake success.",
+        "parameters": {"type": "object", "properties": {
+            "reason": {"type": "string"}, "evidence": {"type": "string"}},
+            "required": ["reason", "evidence"]}}},
+    {"type": "function", "function": {"name": "declare_blocked", "description":
+        "Declare the run could not complete because the PLATFORM/sandbox failed "
+        "you: authentication/authorization errors, quota limits, a resource the "
+        "sandbox could not provision, missing access. You MUST give the real "
+        "error as evidence. Do NOT write deliverable files and claim done when "
+        "you could not actually build or test the thing.",
+        "parameters": {"type": "object", "properties": {
+            "reason": {"type": "string"}, "evidence": {"type": "string"}},
+            "required": ["reason", "evidence"]}}},
 ]
 
 SYSTEM = ("You are the Agisphire sandbox agent inside an ephemeral Azure sandbox, "
@@ -157,13 +204,25 @@ SYSTEM = ("You are the Agisphire sandbox agent inside an ephemeral Azure sandbox
           "resource group. Prefer the Azure Python SDK (azure-identity + "
           "azure-mgmt-*) via run_shell python, or the az CLI; both use the managed "
           "identity. Prefer cheap serverless resources (storage, key vault). Tag "
-          "everything you create with the given tags. Then VERIFY the outcome holds. "
+          "everything you create with the given tags. Then PROVE the outcome holds: "
+          "call verify_outcome with a check command you choose that actually "
+          "exercises the requirement (query the resource you built, hit the "
+          "endpoint, run the assertion). The run is ONLY marked verified if a "
+          "verify_outcome call exits 0; its real output is captured as evidence. "
           "MANDATORY before declare_done: use write_file to create EVERY one of these "
           "exact deliverable files: " + ", ".join(OUTPUTS) + ". Each must contain the "
           "real result (e.g. main.tf holds working terraform for the resources you "
           "created; runbook.md describes what ran and how to re-verify). A run that "
           "declares done without writing ALL of these files is REJECTED as "
           "incomplete. Then call declare_done with a one-line summary. "
+          "HONESTY RULE: if you CANNOT actually build and verify the thing, do "
+          "NOT write the deliverable files and declare done. Instead call "
+          "declare_blocked (the sandbox/platform failed: auth, quota, a resource "
+          "you could not create) or declare_infeasible (the ask itself is "
+          "impossible, with a documented reason). Always cite the real error or "
+          "limitation as evidence. A verify_outcome that only checks your own "
+          "files exist (ls, cat) is NOT verification; the check must exercise the "
+          "real deployed outcome. "
           "Be efficient: write each file ONCE and prefer combined commands.")
 
 messages = [{"role": "system", "content": SYSTEM},
@@ -171,6 +230,7 @@ messages = [{"role": "system", "content": SYSTEM},
              % (REQUIREMENT, RG, TAGS)}]
 
 done, summary = False, ""
+outcome, outcome_reason, outcome_evidence = "", "", ""
 total_tokens = 0
 STARTED = time.time()
 BUDGET_S = int(os.environ.get("AGS_BUDGET_SECONDS", "0"))   # 0 = no cap
@@ -231,8 +291,22 @@ for step in range(1, MAX_STEPS + 1):
         if name == "declare_done":
             done, summary = True, args.get("summary", "")
             break
+        if name == "declare_infeasible":
+            # The task cannot be done as asked (a documented limitation), NOT a
+            # platform failure. Be honest: do not write files and claim done.
+            outcome, outcome_reason = "infeasible", args.get("reason", "")
+            outcome_evidence = args.get("evidence", "")
+            break
+        if name == "declare_blocked":
+            # The PLATFORM/sandbox failed the agent (auth, quota, a resource it
+            # could not provision). Be honest: report the real error as evidence.
+            outcome, outcome_reason = "blocked", args.get("reason", "")
+            outcome_evidence = args.get("evidence", "")
+            break
         if name == "run_shell":
             result = run_shell(args.get("command", ""))
+        elif name == "verify_outcome":
+            result = verify_outcome(args.get("command", ""))
         elif name == "write_file":
             result = write_file(args.get("path", ""), args.get("content", ""))
         elif name == "fetch_docs":
@@ -241,11 +315,19 @@ for step in range(1, MAX_STEPS + 1):
             result = "(error) unknown tool: %s" % name
         print(f"  -> {result[:200]}", flush=True)
         messages.append({"role": "tool", "tool_call_id": call["id"], "content": result})
-    if done:
+    if done or outcome:
         break
 
-print("DONE" if done else "INCOMPLETE", flush=True)
-print("SUMMARY: " + summary, flush=True)
+if outcome in ("infeasible", "blocked"):
+    # Honest non-success: emit the verdict + the documented reason + evidence so
+    # the platform can record a real, inspectable outcome (never a silent fail).
+    print(("INFEASIBLE: " if outcome == "infeasible" else "BLOCKED: ") + outcome_reason, flush=True)
+    if outcome_evidence:
+        print("EVIDENCE: " + outcome_evidence, flush=True)
+    print("SUMMARY: " + (summary or outcome_reason), flush=True)
+else:
+    print("DONE" if done else "INCOMPLETE", flush=True)
+    print("SUMMARY: " + summary, flush=True)
 print("USAGE_TOKENS: %d" % total_tokens, flush=True)
 for fname in OUTPUTS:
     try:
@@ -276,11 +358,16 @@ def command_for() -> list[str]:
             "python3 -m pip install --target=/app/pylibs openai 2>&1 | tail -5; "
             "export PYTHONPATH=/app/pylibs; "
             "python3 -c 'import openai; print(\"openai\", openai.__version__)' 2>&1; "
-            # Authenticate as the attached per-RG managed identity. provision()
-            # already blocked until the identity's role assignment propagated,
-            # so a single login should succeed; we still show account show for
-            # the transcript. The agent's az calls are RBAC-scoped to its RG.
+            # Authenticate as the attached per-RG managed identity, THEN set the
+            # subscription context. Login used --allow-no-subscriptions, so without
+            # `az account set` the CLI has no default subscription and any command
+            # needing one (az cosmosdb, az account list) resolves against the
+            # tenant and fails SubscriptionNotFound. provision() already blocked
+            # until the identity's role assignment propagated, so these succeed.
             "az login --identity --allow-no-subscriptions 2>&1 | tail -2 || true; "
+            # No quotes around the id: it is a GUID (safe), and baked-in quotes
+            # made az account set fail with a malformed subscription id (real bug).
+            "az account set --subscription $AZURE_SUBSCRIPTION_ID 2>&1 | tail -2 || true; "
             "az account show 2>&1 | tail -3 || true; "
             f"echo {b64} | base64 -d > /tmp/agent.py && "
             "PYTHONPATH=/app/pylibs python3 /tmp/agent.py"]

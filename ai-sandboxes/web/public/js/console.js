@@ -168,10 +168,12 @@
           refreshList();
         }).catch(function () { refreshList(); });
       };
-      // Verified runs delivered artifacts: confirm first. Drafts/planned
+      // Terminal runs that produced a record (verified, or an honest infeasible/
+      // blocked verdict) carry artifacts/evidence: confirm first. Drafts/planned
       // (incl. untouched "Untitled task") delete immediately.
-      if (del.getAttribute('data-state') === 'verified') {
-        askConfirm('This verified task and its artifacts and evidence will be permanently removed.', doDelete);
+      var st = del.getAttribute('data-state');
+      if (st === 'verified' || st === 'infeasible' || st === 'blocked') {
+        askConfirm('This ' + st + ' task and its artifacts and evidence will be permanently removed.', doDelete);
       } else {
         doDelete();
       }

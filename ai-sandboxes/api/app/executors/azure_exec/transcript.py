@@ -15,6 +15,86 @@ def declared_done(text: str) -> bool:
     return "DONE" in lines
 
 
+def declared_outcome(text: str) -> tuple[str, str, str]:
+    """The agent's terminal verdict. One of:
+      ("done", ...)      - standalone DONE line; built it and a check passed
+      ("infeasible", reason, evidence) - the task CANNOT be done as asked, with a
+                           documented reason (Azure error, docs limitation, hard
+                           constraint) the agent must supply
+      ("blocked", reason, evidence)    - the PLATFORM/sandbox failed the agent
+                           (auth, quota, a resource it could not provision)
+      ("incomplete", ...) - ran out of budget/steps or crashed; no verdict
+    The agent emits INFEASIBLE: / BLOCKED: lines (optionally followed by an
+    EVIDENCE: line). INFEASIBLE/BLOCKED win over DONE: an agent that hit a wall
+    must say so, not claim success. Non-success verdicts are evidence-backed so
+    the final decision is a real, inspectable statement, never a silent failure.
+    """
+    lines = [l.strip() for l in text.splitlines()]
+    verdict, reason, evidence = "incomplete", "", ""
+    for i, l in enumerate(lines):
+        if l.startswith("INFEASIBLE:"):
+            verdict, reason = "infeasible", l.split(":", 1)[1].strip()
+        elif l.startswith("BLOCKED:"):
+            verdict, reason = "blocked", l.split(":", 1)[1].strip()
+        elif l.startswith("EVIDENCE:") and verdict in ("infeasible", "blocked"):
+            evidence = l.split(":", 1)[1].strip()
+    if verdict in ("infeasible", "blocked"):
+        return verdict, reason, evidence
+    if "INCOMPLETE" in lines:
+        return "incomplete", "", ""
+    if "DONE" in lines:
+        return "done", "", ""
+    return "incomplete", "", ""
+
+
+def verify_evidence(text: str) -> list[tuple[int, str, str]]:
+    """All verification blocks the agent produced via verify_outcome, as a list
+    of (exit_code, command, output). The agent must prove its claim by running a
+    check command it chose; the harness runs it and emits a VERIFY-RESULT marker
+    with the real exit code + captured output (+ VERIFY-CMD with the command).
+    The platform never trusts declare_done alone: a run is only verified when at
+    least one VERIFY-RESULT exits 0. Domain-agnostic (we check THAT a check
+    passed, not WHAT it checked), so it works for any request."""
+    out: list[tuple[int, str, str]] = []
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        if line.startswith("VERIFY-RESULT: exit="):
+            try:
+                code = int(line.split("exit=", 1)[1].strip())
+            except ValueError:
+                code = -1
+            cmd, buf = "", []
+            i += 1
+            while i < len(lines) and lines[i].strip() != "VERIFY-END":
+                cur = lines[i]
+                if cur.strip().startswith("VERIFY-CMD:"):
+                    cmd = cur.split("VERIFY-CMD:", 1)[1].strip()
+                else:
+                    buf.append(cur)
+                i += 1
+            out.append((code, cmd, "\n".join(buf).strip()))
+        i += 1
+    return out
+
+
+def verify_log_text(text: str) -> str:
+    """Render JUST the verification evidence for verify.log: each check command
+    the agent ran, its pass/fail, and its real output. verify.log exists to show
+    the proof, so it must NOT be a copy of the full run transcript (run.log keeps
+    that). Returns a placeholder when no check ran."""
+    evidence = verify_evidence(text)
+    if not evidence:
+        return "(no verification check was run; the run did not verify)\n"
+    parts = []
+    for code, cmd, out in evidence:
+        status = "PASS" if code == 0 else f"FAIL (exit {code})"
+        label = cmd or "(command not captured)"
+        parts.append(f"$ {label}\n-> {status}\n{out}")
+    return "\n\n".join(parts) + "\n"
+
+
 def usage_tokens(text: str) -> int:
     """Total LLM tokens the agent reported via its USAGE_TOKENS lines. The agent
     prints a RUNNING total every step (so a hard abort still leaves the last

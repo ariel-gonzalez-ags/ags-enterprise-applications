@@ -123,6 +123,11 @@ class AzureExecutor:
                 "AGS_REQUIREMENT": payload.env.get("AGS_REQUIREMENT", ""),
                 "AGS_MODEL": payload.env.get("AGS_MODEL", self._settings.gemini_model),
                 "AGS_RG": sb.rg_name,
+                # The agent must know its subscription: without it, az CLI calls
+                # that need subscription context (az cosmosdb, az account list)
+                # resolve against the TENANT and fail SubscriptionNotFound, so the
+                # agent builds nothing and may still declare done. (Real run bug.)
+                "AZURE_SUBSCRIPTION_ID": self._settings.azure_subscription_id,
                 "AGS_TAGS": "; ".join(f"{k}={v}" for k, v in tags.items()),
                 "AGS_OUTPUTS": payload.env.get("AGS_OUTPUTS", ""),
                 "AGS_BUDGET_SECONDS": str(budget_seconds),
@@ -179,6 +184,13 @@ class AzureExecutor:
             done = transcript_log.declared_done(transcript)
             files = transcript_log.files_from_log(transcript)
             summary = transcript_log.summary_from_log(transcript)
+            # The agent's honest verdict (#12): done / infeasible / blocked /
+            # incomplete. INFEASIBLE and BLOCKED carry a documented reason +
+            # evidence, and they WIN over any DONE the agent also printed: an
+            # agent that hit a wall must not be able to claim success.
+            outcome, out_reason, out_evidence = transcript_log.declared_outcome(transcript)
+            if outcome in ("infeasible", "blocked"):
+                done = False
             # Verification requires the agent to have actually produced every
             # requested deliverable. A declared-done with a missing/empty
             # deliverable is NOT verified: it means the agent built the
@@ -189,17 +201,39 @@ class AzureExecutor:
                 emit(f"declared done but missing deliverable(s): {', '.join(missing)}")
                 yield log[-1]
                 done = False
-            ok = done and state == "Succeeded"
+            # Done alone is just the agent's word. Verified requires EVIDENCE:
+            # at least one verify_outcome check (a command the agent chose to
+            # exercise the requirement) that actually exited 0. This is
+            # domain-agnostic: we check THAT a check passed, not WHAT it
+            # checked, so it works for any request. The captured output lands in
+            # verify.log as user-readable evidence.
+            evidence = transcript_log.verify_evidence(transcript)
+            passing = [c for c, _cmd, _out in evidence if c == 0]
+            if done and not passing:
+                emit("declared done but no verification check passed "
+                     f"({len(evidence)} attempt(s), none exit 0)")
+                yield log[-1]
+                done = False
+            ok = done and outcome == "done" and state == "Succeeded"
             if self.aborted:
                 note = "aborted by user"
+            elif outcome in ("infeasible", "blocked"):
+                note = f"{outcome}: {out_reason}" if out_reason else outcome
             else:
                 note = summary or ("verified" if ok else f"incomplete ({state})")
+            # verify.log must show the PROOF, not re-dump the whole transcript
+            # (run.log already keeps that). Inject just the verify evidence as a
+            # deliverable so the runner stores it as the verify.log artifact.
+            files = dict(files)
+            files["verify.log"] = transcript_log.verify_log_text(transcript)
             self._result = RunResult(
                 ok=ok, exit_code=0 if ok else 1, log="\n".join(log),
                 files=files, idempotent=done,
                 note=note,
                 sandbox_seconds=int(time.time()) - sb.created_at,
-                llm_tokens=transcript_log.usage_tokens(transcript))
+                llm_tokens=transcript_log.usage_tokens(transcript),
+                outcome=outcome, outcome_reason=out_reason,
+                outcome_evidence=out_evidence)
         except Exception as exc:  # never leave a run unreported
             # Grab whatever the agent printed before it died, so the failure is
             # diagnosable instead of a bare "error" (the RG delete would
