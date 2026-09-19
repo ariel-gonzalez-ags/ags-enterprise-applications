@@ -508,7 +508,9 @@ async def test_run_log_excludes_internals():
         "AGS_REQUIREMENT": "make a storage account",
         "AGS_OUTPUTS": "runbook.md", "AGS_MODEL": "gemini-2.5-flash",
     }, timeout_seconds=60)
-    lines = [line async for line in ex.run(payload)]
+    # Drain the async generator (that is what runs the executor to completion);
+    # the transcript itself is read from ex.live_log below, not the yielded lines.
+    _ = [line async for line in ex.run(payload)]
     res = ex.result()
     assert res.ok is True, res.note
     run_log = "\n".join(ex.live_log)
