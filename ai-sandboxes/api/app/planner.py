@@ -12,6 +12,7 @@ import json
 
 from openai import AsyncOpenAI
 
+from . import grounding
 from .config import Settings
 
 _BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
@@ -26,24 +27,40 @@ CANONICAL_FORMATS = [
     "bash", "powershell", "python", "json", "yaml", "markdown",
 ]
 
-_SYSTEM = """You are the Agisphire planner agent. Users describe infrastructure
-or ops work; you clarify, then propose an execution plan that will run in an
-ephemeral cloud sandbox with verified results.
+_SYSTEM = """You are the Agisphire planner: a senior cloud/ops engineer the user
+is brainstorming with. You think out loud, ask sharp questions, and when the
+picture is clear you propose a plan that will run in an ephemeral cloud sandbox
+with verified results.
 
-Rules:
-- Ask clarifying questions while requirements are ambiguous; in that case set
-  plan to null and use reply for your questions.
-- Propose exactly one plan when you have enough to execute; after that keep
-  the same plan unless the user changes scope.
-- Deliverables are what the sandbox run will produce and verify. Each id is a
-  short slug; "why" is a short rationale.
-- STRONGLY prefer a canonical deliverable id when one fits: """ + ", ".join(CANONICAL_FORMATS) + """.
-  Use these exact ids (all lowercase, e.g. terraform, markdown), not variants
-  like Terraform_code or Markdown_runbook. Only invent a new lowercase-dashed
-  slug when no canonical id fits the request.
+How to behave in the conversation:
+- REASON WITH THE USER, not at them. When there's a real fork (e.g. terraform
+  vs. pulumi, one big resource vs. several small, a managed service vs. rolling
+  it yourself), name the options and the trade-off in a sentence or two, say
+  which you'd pick and why, then let them steer.
+- Ask TARGETED questions when something genuinely blocks a good plan (which
+  cloud? how big? prod or throwaway? any constraints?). Don't interrogate. One
+  or two sharp questions beat a checklist. If you can make a reasonable
+  assumption and say so, do that instead of asking.
+- While things are ambiguous, set plan to null and put your questions/reasoning
+  in reply. When you have enough to execute, propose exactly one plan.
+- NARRATE the plan in your reply: a sentence or two on what you'll build and
+  why those deliverables, so the chat text and the plan card read as one
+  thought, not two disconnected widgets.
+
+On deliverables:
+- Choose the deliverables the task GENUINELY needs. The canonical ids are a
+  labeling convenience (""" + ", ".join(CANONICAL_FORMATS) + """); prefer one when it
+  truly fits so the UI labels it and the file is named right, but never force a
+  task into a bucket. Invent a clean lowercase-dashed slug when the task calls
+  for something the list doesn't cover.
 - Prefer idempotent IaC deliverables when the task is provisioning-shaped.
-- Be terse: reply under 80 words, plan summary one sentence, each "why"
-  under 12 words. Keep reasoning brief so the JSON fits the token budget."""
+
+Engineering posture (apply it; don't recite it):
+""" + grounding.block() + """
+
+Keep your reply focused and readable: a short paragraph or a couple of tight
+bullets, not an essay. The plan's summary is one sentence; each deliverable's
+"why" is a short rationale."""
 
 
 class PlannerUnavailable(Exception):
@@ -155,15 +172,9 @@ def _context_message(state: dict | None) -> str | None:
     return "\n".join(lines)
 
 
-async def reply(settings: Settings, history: list[dict], state: dict | None = None,
-                model: str | None = None) -> dict:
-    """history: [{'role': 'user'|'agent', 'text': ...}] oldest first.
-    state: current task settings ({provider, formats, idempotent,
-    destroy_after, max_hours}) so re-planning respects the user's toggles.
-    model: per-task model override (from the picker); falls back to the
-    configured default. Returns {'reply', 'title', 'plan'}; never raises on
-    model/parse errors; a degraded chat is better than a broken one."""
-    use_model = model if model in MODEL_IDS else settings.gemini_model
+def _messages(history: list[dict], state: dict | None) -> list[dict]:
+    """Build the system + context + history message list shared by the
+    single-shot reply() and the two-phase reply_live()."""
     messages = [{"role": "system", "content": _SYSTEM}]
     ctx = _context_message(state)
     if ctx:
@@ -173,12 +184,28 @@ async def reply(settings: Settings, history: list[dict], state: dict | None = No
             "role": "user" if m["role"] == "user" else "assistant",
             "content": m["text"],
         })
+    return messages
+
+
+async def reply(settings: Settings, history: list[dict], state: dict | None = None,
+                model: str | None = None) -> dict:
+    """history: [{'role': 'user'|'agent', 'text': ...}] oldest first.
+    state: current task settings ({provider, formats, idempotent,
+    destroy_after, max_hours}) so re-planning respects the user's toggles.
+    model: per-task model override (from the picker); falls back to the
+    configured default. Returns {'reply', 'title', 'plan'}; never raises on
+    model/parse errors; a degraded chat is better than a broken one."""
+    use_model = model if model in MODEL_IDS else settings.gemini_model
+    messages = _messages(history, state)
 
     try:
         resp = await _client(settings).chat.completions.create(
             model=use_model,
             messages=messages,
-            temperature=0.3,
+            # 0.6 (up from 0.3): enough variation that replies read as a person
+            # reasoning, not a template, while staying coherent for the JSON
+            # contract. The schema (response_format) is what guarantees shape.
+            temperature=0.6,
             # Gemini 3.x is a reasoning model: it spends tokens "thinking"
             # before the JSON, so the cap must cover reasoning + the reply.
             # Generous ceiling (50k) so reasoning over a long thread never
@@ -195,6 +222,13 @@ async def reply(settings: Settings, history: list[dict], state: dict | None = No
     except Exception as exc:  # API/network/quota: degrade gracefully
         return _fallback(f"(planner temporarily unavailable: {type(exc).__name__})")
 
+    return _shaped(raw)
+
+
+def _shaped(raw: str) -> dict:
+    """Parse + canonicalize the planner's JSON into {reply, title, plan}.
+    Shared by reply() and reply_live(); never raises (falls back to a plain
+    reply so a parse hiccup never breaks the chat)."""
     try:
         data = json.loads(raw)
         assert isinstance(data.get("reply"), str)
@@ -216,6 +250,104 @@ async def reply(settings: Settings, history: list[dict], state: dict | None = No
         "title": data.get("title") if isinstance(data.get("title"), str) else None,
         "plan": plan,
     }
+
+
+# Phase-1 conversational system prompt: NO JSON contract, just the persona, so
+# the model can answer fast and naturally. The plan card is extracted in a
+# separate phase-2 call (structured output) once this text lands.
+_CHAT_SYSTEM = """You are the Agisphire planner: a senior cloud/ops engineer the
+user is brainstorming with. Reply in plain conversational text (no JSON, no
+markdown fences), the way a sharp colleague would in chat.
+
+How to reply:
+- BIAS TO ACT (user decision): when the ask is clear enough to plan, say what
+  you'd build and the one or two assumptions you're making, in a sentence or
+  two. Do NOT interrogate. Ask a question ONLY when something genuinely blocks
+  a good plan (which cloud? prod vs throwaway? a real ambiguity). One sharp
+  question beats a checklist.
+- When there's a real fork (terraform vs pulumi, one big resource vs several
+  small, managed service vs roll-your-own), name the options and the trade-off
+  briefly and say which you'd pick.
+- Sound like a person reasoning, not a consultant's summary: "I'd do X because
+  Y" beats "I have designed a plan to...".
+- Keep it tight: a short paragraph or a couple of quick lines. The structured
+  plan card is generated separately, so don't restate a file list.
+
+Engineering posture (apply it; don't recite it):
+""" + grounding.block()
+
+
+async def reply_live(settings: Settings, history: list[dict],
+                     state: dict | None = None, model: str | None = None) -> dict:
+    """Two-phase reply. Phase 1 is a FAST plain-text conversational answer (no
+    JSON contract, small token cap) so the console can show the reply quickly
+    and the client-side typewriter has real text sooner. Phase 2 is a separate
+    structured call that extracts {title, plan} from the conversation + the
+    phase-1 answer. Returns the same {reply, title, plan} shape as reply().
+
+    Why two-phase: Gemini 3.x buffers the whole reply then bursts it (measured
+    ~5.5s silence then all chunks at once), so real token-streaming feels the
+    same as a single shot. Splitting the cheap conversational text from the
+    heavier structured plan shortens time-to-first-text without fake streaming.
+    """
+    use_model = model if model in MODEL_IDS else settings.gemini_model
+    messages = [{"role": "system", "content": _CHAT_SYSTEM}]
+    ctx = _context_message(state)
+    if ctx:
+        messages.append({"role": "system", "content": ctx})
+    for m in history[-20:]:
+        messages.append({
+            "role": "user" if m["role"] == "user" else "assistant",
+            "content": m["text"],
+        })
+
+    # Phase 1: fast conversational text.
+    try:
+        r1 = await _client(settings).chat.completions.create(
+            model=use_model,
+            messages=messages,
+            temperature=0.6,
+            max_tokens=4000,  # a chat reply, not a plan: keep it quick
+        )
+        text = (r1.choices[0].message.content or "").strip()
+    except PlannerUnavailable:
+        raise
+    except Exception as exc:
+        return _fallback(f"(planner temporarily unavailable: {type(exc).__name__})")
+    if not text:
+        return _fallback("(planner returned an empty response)")
+
+    # Phase 2: structured plan from the conversation + the phase-1 answer. The
+    # reply text is already decided; this only fills title + plan card.
+    plan_messages = messages + [
+        {"role": "assistant", "content": text},
+        {"role": "user", "content":
+            "Now output the structured result for what you just said, as JSON "
+            "{reply, title, plan}. Set reply to your message above verbatim. "
+            "Set plan to null if you are still clarifying; otherwise propose "
+            "the single plan. For each deliverable, `id` is the artifact TYPE "
+            "from the canonical list (terraform, markdown, bash, ...), NOT a "
+            "file name: a Terraform module is one `terraform` deliverable even "
+            "though it spans main.tf/variables.tf/outputs.tf, and a README is "
+            "`markdown`. `why` is a short rationale."},
+    ]
+    try:
+        r2 = await _client(settings).chat.completions.create(
+            model=use_model,
+            messages=plan_messages,
+            temperature=0.2,  # extraction, not creative: keep it deterministic
+            max_tokens=50000,  # reasoning + the plan JSON
+            response_format=_PLAN_RESPONSE_FORMAT,
+        )
+        shaped = _shaped(r2.choices[0].message.content or "")
+        # The conversational text is authoritative (it is what the user saw
+        # stream); the phase-2 reply field should echo it, but trust ours.
+        shaped["reply"] = text
+        return shaped
+    except Exception:
+        # Phase 2 failed: the user still gets the conversational reply, just no
+        # plan card yet. Better than dropping the whole answer.
+        return {"reply": text, "title": None, "plan": None}
 
 
 def _canonical_id(raw: str) -> str:

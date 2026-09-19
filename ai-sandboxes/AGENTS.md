@@ -438,7 +438,7 @@ HTTP request. Don't reintroduce synchronous planner calls. The bus is
 single-node (one dict of asyncio queues); a multi-node swap means replacing
 it with Redis pub/sub behind the same interface.
 
-**The planner sees the task's current settings.** `planner.reply(settings,
+**The planner sees the task's current settings.** `planner.reply_live(settings,
 history, state, model)` injects a context message with the accepted deliverables,
 target cloud, and idempotent/destroy/max-hours values, so re-planning
 respects the plan-card toggles instead of reverting to a prior plan. The
@@ -481,6 +481,19 @@ buffer the whole reply (no incremental token stream), so `console.js`
 reveals the newest agent reply progressively (faux-typing) after it lands.
 The effect is independent of which model produced the text; the plan card
 pops in once the text finishes (structured JSON cannot render half-formed).
+
+**The planner is two-phase (`planner.reply_live`), not single-shot.** Measured:
+Gemini 3.x buffers ~5.5s then bursts all stream chunks at once, so real SSE
+token-streaming feels identical to a single call (do not build it). Instead
+`reply_live` splits the work: phase 1 is a FAST plain-text conversational call
+(`_CHAT_SYSTEM`, no JSON contract, 4k cap) so the reply lands ~4.5s and the
+client typewriter starts sooner; phase 2 is a separate structured call that
+extracts `{title, plan}` (the plan card decouples from the reply). The phase-1
+text is authoritative (the phase-2 `reply` field is overwritten with it).
+`_plan_in_background` calls `reply_live`; `reply()` (single-shot) is kept for
+compat, and tests mock `reply_live`. Persona/grounding live in `_SYSTEM` /
+`_CHAT_SYSTEM` + the shared `app/grounding.py` block (rule 11: also inlined in
+`agent_script.SCRIPT` since the image cannot import the module).
 
 **Plan-card UI conventions in console.js.** Two things that are easy to get
 wrong: (1) the New-task target-cloud highlight is driven only by the stored

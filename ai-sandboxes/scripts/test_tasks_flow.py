@@ -71,7 +71,7 @@ async def main():
         print("ok    task created in drafting:", tid)
 
         # 3. chat without planner key: accepted, degradation lands in-thread
-        with mock.patch("app.routers.tasks.planner.reply",
+        with mock.patch("app.routers.tasks.planner.reply_live",
                         side_effect=__import__("app.planner", fromlist=["PlannerUnavailable"]).PlannerUnavailable):
             r = await c.post(f"/api/tasks/{tid}/messages", json={"text": "hi"})
             assert r.status_code == 202, r.text
@@ -84,7 +84,7 @@ async def main():
         print("ok    missing planner key degrades into an in-thread message")
 
         # 4. chat with mocked planner → 202 instantly, reply lands async
-        with mock.patch("app.routers.tasks.planner.reply",
+        with mock.patch("app.routers.tasks.planner.reply_live",
                         new=mock.AsyncMock(return_value=MOCK_PLAN)):
             r = await c.post(f"/api/tasks/{tid}/messages",
                              json={"text": "Harden my Ubuntu VMs to CIS L2"})
