@@ -585,9 +585,9 @@ async def test_blocked_run_lands_terminal_not_verified():
     az = _fake_az(log_text=transcript, state="Failed", exit_code=1)
     async with db.session() as sess:
         sess.add(Task(id="blocked-1", owner_sub="u", title="x", state="running",
-                      formats=["markdown"]))
+                       formats=["markdown"]))
         await sess.commit()
-    import app.executors as ex_mod
+    from app import executors as ex_mod
     orig = ex_mod.get_executor
     ex_mod.get_executor = lambda settings: AzureExecutor(settings, az_clients=az)
     try:
