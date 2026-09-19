@@ -167,7 +167,7 @@ async def test_teardown_proof_stored_as_artifact():
         t = Task(id="td-proof", owner_sub="owner-proof", title="x",
                  state="running", formats=["markdown"])
         sess.add(t); await sess.commit()
-    import app.executors as ex_mod
+    from app import executors as ex_mod
     orig = ex_mod.get_executor
     ex_mod.get_executor = lambda settings: AzureExecutor(settings, az_clients=az)
     try:
@@ -220,7 +220,7 @@ async def test_abort_records_real_meters_and_proof():
         sess.add(Task(id="abort-meters", owner_sub="u", title="x",
                       state="running", formats=["markdown"]))
         await sess.commit()
-    import app.executors as ex_mod
+    from app import executors as ex_mod
     orig = ex_mod.get_executor
     ex_mod.get_executor = lambda settings: _FakeEx()
     try:
