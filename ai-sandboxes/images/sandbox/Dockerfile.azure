@@ -1,0 +1,13 @@
+# syntax=docker/dockerfile:1
+# Azure variant: base toolchain + the Azure CLI. Thin layer over the shared
+# base so an ACI host reuses the base and only pulls this layer per Azure task.
+# BASE_IMAGE is the ghcr base ref supplied by the build workflow.
+ARG BASE_IMAGE=ghcr.io/ariel-gonzalez-ags/ags-sandbox-base:latest
+FROM ${BASE_IMAGE}
+
+USER root
+ARG AZURE_CLI_VERSION=2.90.0
+# azure-cli is pip-installable; pinning the version keeps runs reproducible.
+# Installed as root into system site-packages, then drop back to the sandbox user.
+RUN pip install --no-cache-dir "azure-cli==${AZURE_CLI_VERSION}"
+USER sandbox

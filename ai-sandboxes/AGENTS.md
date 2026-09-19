@@ -232,6 +232,12 @@ the user before implementing**. See "Evolution path".
 ├── Dockerfile            ← web image: astro build → smoke tests → nginx
 ├── docker-compose.yml    ← web + api, host port 8090
 ├── nginx.conf            ← static + /assets + /api proxy; /healthz on 8081
+├── images/sandbox/       ← sandbox agent images (TODO 14b): Dockerfile.base
+│                           (cloud-agnostic toolchain + agent script) + thin
+│                           Dockerfile.azure/.aws/.gcp variants FROM the base.
+│                           Built+pushed to ghcr.io by sandbox-images.yml.
+│                           Build-only for now; the executor still uses the MCR
+│                           azure-cli image + base64 shim (see README there).
 ├── .env.example          ← env template (copy to .env.local, gitignored)
 ├── scripts/
 │   ├── dev.sh            ← frontend hot-reload (no docker), :4321

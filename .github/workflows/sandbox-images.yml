@@ -1,0 +1,101 @@
+name: sandbox-images
+
+# Builds and pushes the Agisphire sandbox agent images to ghcr.io (public, so
+# no pull auth from ACI; free under GitHub Packages for public packages).
+# Layered: a shared cloud-agnostic base, then thin per-cloud variants that
+# reuse the base. See ai-sandboxes/images/sandbox/ and TODO item 14b.
+
+on:
+  push:
+    branches: [develop]
+    paths: ['ai-sandboxes/images/sandbox/**', 'ai-sandboxes/api/app/executors/azure_exec/agent_script.py']
+  workflow_dispatch:
+
+# GITHUB_TOKEN needs packages:write to push to ghcr; contents:read to checkout.
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: sandbox-images
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/ags-sandbox
+  SANDBOX_DIR: ai-sandboxes/images/sandbox
+
+jobs:
+  base:
+    runs-on: ubuntu-latest
+    outputs:
+      base_image: ${{ steps.tag.outputs.base_image }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Log in to ghcr
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Resolve base tag
+        id: tag
+        run: echo "base_image=${IMAGE_PREFIX}-base:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
+      # The agent script the image bakes in lives under api/app/executors; copy
+      # it into the build context so Dockerfile.base can COPY it.
+      - name: Stage agent script into build context
+        run: cp ai-sandboxes/api/app/executors/azure_exec/agent_script.py "${{ env.SANDBOX_DIR }}/agent_script.py"
+
+      - name: Build + push base
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ env.SANDBOX_DIR }}
+          file: ${{ env.SANDBOX_DIR }}/Dockerfile.base
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}-base:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}-base:latest
+          cache-from: type=gha,scope=sandbox-base
+          cache-to: type=gha,mode=max,scope=sandbox-base
+
+  variants:
+    runs-on: ubuntu-latest
+    needs: base
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [azure, aws, gcp]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Log in to ghcr
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Variants build FROM the freshly-pushed base image (by sha tag), so a
+      # given push always pairs a variant with its exact base.
+      - name: Build + push ${{ matrix.variant }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ env.SANDBOX_DIR }}
+          file: ${{ env.SANDBOX_DIR }}/Dockerfile.${{ matrix.variant }}
+          push: true
+          build-args: |
+            BASE_IMAGE=${{ needs.base.outputs.base_image }}
+          tags: |
+            ${{ env.IMAGE_PREFIX }}-${{ matrix.variant }}:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}-${{ matrix.variant }}:latest
+          cache-from: type=gha,scope=sandbox-${{ matrix.variant }}
+          cache-to: type=gha,mode=max,scope=sandbox-${{ matrix.variant }}

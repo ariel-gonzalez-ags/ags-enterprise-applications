@@ -1,0 +1,24 @@
+# syntax=docker/dockerfile:1
+# GCP variant: base toolchain + the Google Cloud CLI (gcloud), pinned. Thin
+# layer over the shared base; a host reuses base and pulls only this layer.
+ARG BASE_IMAGE=ghcr.io/ariel-gonzalez-ags/ags-sandbox-base:latest
+FROM ${BASE_IMAGE}
+
+USER root
+ARG GCLOUD_VERSION=585.0.0
+# gcloud ships as a versioned tarball with its own bundled python; install to
+# /opt and link the binaries onto PATH. --quiet skips the interactive prompts.
+RUN curl -fsSL "https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-${GCLOUD_VERSION}-linux-x86_64.tar.gz" \
+        -o /tmp/gcloud.tar.gz \
+    && tar -xzf /tmp/gcloud.tar.gz -C /opt \
+    && /opt/google-cloud-sdk/install.sh --quiet --usage-reporting=false \
+        --path-update=false --command-completion=false \
+    && ln -s /opt/google-cloud-sdk/bin/gcloud /usr/local/bin/gcloud \
+    && ln -s /opt/google-cloud-sdk/bin/gsutil /usr/local/bin/gsutil \
+    && rm /tmp/gcloud.tar.gz \
+    # install.sh runs as root and seeds /root/.config; the sandbox user's own
+    # ~/.config doesn't exist yet, so pre-create it writable or gcloud can't
+    # write logs/config at runtime (PermissionError on first call).
+    && mkdir -p /home/sandbox/.config/gcloud \
+    && chown -R sandbox:sandbox /home/sandbox/.config
+USER sandbox
