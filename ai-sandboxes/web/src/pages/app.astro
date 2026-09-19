@@ -13,7 +13,12 @@ import RunInspector from '../components/RunInspector.astro';
 </ConsoleShell>
 
 <script>
-  // Gate: anonymous → /login; signed in → boot the console client.
+  // Gate: anonymous → /login; signed in → boot the console. The console is a
+  // bundled ES-module graph (src/console/, built by Astro/Vite); importing boot
+  // here pulls it into this page's bundle, and we call it only after auth so
+  // anonymous visitors never start it.
+  import { boot } from '../console/index.js';
+
   fetch('/api/auth/me', { credentials: 'same-origin' })
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (data) {
@@ -21,9 +26,7 @@ import RunInspector from '../components/RunInspector.astro';
         window.location.replace('/login');
         return;
       }
-      var s = document.createElement('script');
-      s.src = '/js/console.js';
-      document.body.appendChild(s);
+      boot();
     })
     .catch(function () {
       document.getElementById('gate').hidden = false;

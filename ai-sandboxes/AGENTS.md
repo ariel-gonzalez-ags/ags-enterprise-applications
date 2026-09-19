@@ -276,8 +276,9 @@ the user before implementing**. See "Evolution path".
     ├── package.json
     ├── public/
     │   ├── assets/       ← static brand files (logo SVGs = favicon) + provider logos
-    │   └── js/           ← ONLY client JS: auth.js (nav/session) + console.js
-    │                       (/app data flow, sanctioned, see rule 8)
+    │   └── js/           ← raw client JS: auth.js (nav/session) + usage.js
+    │                       (/usage). The /app console lives in src/console/
+    │                       (bundled by Astro; see rule 8)
     ├── src/
     │   ├── content/      ← ALL copy as JS data (home.js)
     │   ├── layouts/      ← Base.astro: <head>, fonts, global CSS, auth prop
@@ -307,12 +308,29 @@ the user before implementing**. See "Evolution path".
    static files in `public/assets/`. Never redraw or restyle it elsewhere. See
    "Brand system" below.
  8. **Client-side JS is an explicit exception, not a pattern.** The sanctioned
-   scripts are `public/js/auth.js` (nav auth state), `public/js/console.js`
-   (/app data flow against `/api/tasks*`), `public/js/usage.js` (/usage data
-   flow against `/api/embers`), the gate script in `pages/app.astro`, and the
-   signed-in bounce in `pages/login.astro`. All are vanilla, IIFE/scoped, and
-   only call `/api/*`.
-   console.js renders into `data-console="*"` hooks in the component shells;
+   scripts are `public/js/auth.js` (nav auth state), the /app console under
+   `src/console/` (data flow against `/api/tasks*`), `public/js/usage.js`
+   (/usage data flow against `/api/embers`), the gate script in
+   `pages/app.astro`, and the signed-in bounce in `pages/login.astro`. All are
+   vanilla and only call `/api/*`.
+   The console outgrew a single file (console.js hit ~950 lines), so it is split
+   into ES modules under `src/console/` and **bundled by the Astro/Vite build**
+   (the same build the rest of the site already uses). The /app gate in
+   `pages/app.astro` does `import { boot } from '../console/index.js'` and calls
+   `boot()` only after auth; Astro hoists the gate + console graph into a hashed
+   `/_astro/` module and serves that. The modules: `state.js` (the single
+   shared-state object `S` + the `dom` element map + pure helpers
+   `api/esc/ago/provImg` + format tables + a null-safe `on(el,ev,fn)` listener
+   helper), `confirm.js`, `rail.js`, `thread.js`, `inspector.js`, `picker.js`,
+   `palette.js`, `dataflow.js` (renderAll/select/refreshList/SSE/poll),
+   `index.js` (entry: imports all for wiring, exports `boot()`). Cross-module
+   state flows ONLY through `S.*`; DOM refs ONLY through `dom.*`. Import cycles
+   between dataflow and the feature modules are safe because the cross-calls
+   happen at runtime (listeners/boot), never at module top level. Keep new
+   console behavior in a focused module; do NOT let a module grow past the
+   rule-1 size again. (usage.js + auth.js are still hand-written raw scripts in
+   `public/js/`; only the console moved under the bundler.)
+   The console renders into `data-console="*"` hooks in the component shells;
    **any markup it injects needs `:global()` selectors in the component's
    `<style>`**: Astro scoping doesn't reach runtime DOM. Any further client
    JS needs the user's sign-off.

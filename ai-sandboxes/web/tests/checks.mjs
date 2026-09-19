@@ -1,7 +1,7 @@
 // Smoke tests for the built site. Run: node tests/checks.mjs
 // These run inside the Docker build (see ../../Dockerfile): a failing check
 // fails the image build, so nothing broken can ship.
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -56,9 +56,15 @@ check('app: run inspector renders', app.includes('Guarantees') && app.includes('
 check('app: target-cloud picker in rail', app.includes('data-console="providers"') && app.includes('Target cloud'));
 check('app: no mock data shipped', !app.includes('ags_b3f58c') && !app.includes('OOMKill'));
 check('app: gate overlay present (no-JS fallback)', app.includes('gate-overlay'));
-check('app: gate script calls /api/auth/me', app.includes('/api/auth/me'));
-check('app: gate boots console.js for signed-in users', app.includes('/js/console.js'));
-check('app: gate redirects anonymous to /login', /location\.replace\(['`]\/login['`]\)/.test(app));
+// The /app gate imports boot() from the bundled console graph, so Astro/Vite
+// hoists the gate + console into a hashed /_astro/ module and app.html loads it
+// via <script type="module" src="/_astro/...">. Assert on that bundle.
+const appBundle = readdirSync(join(dist, '_astro'))
+  .filter((f) => f.includes('app.astro'))
+  .map((f) => read('_astro/' + f)).join('\n');
+check('app: gate module bundle emitted', app.includes('/_astro/') && appBundle.length > 0);
+check('app: gate calls /api/auth/me then boots the console', appBundle.includes('/api/auth/me') && appBundle.includes('/api/tasks'));
+check('app: gate redirects anonymous to /login', appBundle.includes('location.replace') && appBundle.includes('/login'));
 check('app: console nav renders (not marketing nav)', app.includes('Search tasks') && !app.includes('How it works'));
 check('app: provider logos wired', ['/assets/providers/aws.svg', '/assets/providers/azure.svg', '/assets/providers/gcp.svg'].every((p) => app.includes(p)));
 check('app: theme bootstrap present', app.includes('ags-theme') && app.includes('prefers-color-scheme'));
@@ -86,10 +92,13 @@ check('asset: usage.js calls embers API', usageJs.includes('/api/embers'));
 check('asset: usage.js wires billing endpoints', usageJs.includes('/api/billing/topup') && usageJs.includes('/api/billing/card-setup') && usageJs.includes('/api/billing/config'));
 check('asset: usage.js renders text not untrusted html', usageJs.includes('textContent'));
 
-const consoleJs = read('js/console.js');
-check('asset: console.js is an IIFE', consoleJs.includes('(function () {'));
-check('asset: console.js calls tasks API', consoleJs.includes('/api/tasks'));
-check('asset: console.js escapes rendered text', consoleJs.includes('&lt;'));
+// The console is a bundled ES-module graph (src/console/, built by Astro/Vite),
+// pulled into the /app gate bundle. Assert the console's escaping helper survives
+// minification (esc maps '<' to '&lt;') in that bundle.
+check('asset: console bundle escapes rendered text', appBundle.includes('&lt;'));
+
+
+
 
 const authJs = read('js/auth.js');
 check('asset: auth.js uses /api/auth/me', authJs.includes('/api/auth/me'));
