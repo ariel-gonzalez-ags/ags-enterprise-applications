@@ -12,8 +12,8 @@ from typing import Awaitable, Callable
 
 from openai import AsyncOpenAI
 
-from .agent_context import (  # noqa: F401  (some are re-exported for tests)
-    TOOLS, _SYSTEM, _CTX_BUDGET, _KEEP_RECENT_TOOLS, _RECITE_EVERY, _TOOL_CAP,
+from .agent_context import (
+    TOOLS, _SYSTEM, _CTX_BUDGET, _RECITE_EVERY,
     _clip, _compact, _est_tokens, _prune_tools,
 )
 from .credentials import AzureUnavailable  # noqa: F401  (re-export)

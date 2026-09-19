@@ -308,7 +308,7 @@ async def test_agent_loop_declares_done():
 
 
 def test_context_helpers():
-    from app.executors.azure_exec import agent
+    from app.executors.azure_exec import agent, agent_context
     # clip: short text passes through, long text is head+tail with a pointer
     assert agent._clip("short") == "short"
     long_text = "x" * 5000
@@ -325,9 +325,9 @@ def test_context_helpers():
     agent._prune_tools(msgs)
     tools = [m for m in msgs if m.get("role") == "tool"]
     kept = [m for m in tools if not str(m["content"]).startswith("[cleared")]
-    assert len(kept) == agent._KEEP_RECENT_TOOLS
+    assert len(kept) == agent_context._KEEP_RECENT_TOOLS
     assert kept[-1]["content"] == "out5"  # most recent verbatim
-    assert all(str(t["content"]).startswith("[cleared") for t in tools[:-agent._KEEP_RECENT_TOOLS])
+    assert all(str(t["content"]).startswith("[cleared") for t in tools[:-agent_context._KEEP_RECENT_TOOLS])
     # est_tokens scales with content
     assert agent._est_tokens(msgs) > 0
     print("ok    context: clip truncates with pointer, prune keeps recent, est works")
