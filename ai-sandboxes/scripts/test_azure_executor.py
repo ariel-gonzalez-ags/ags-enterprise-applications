@@ -376,6 +376,10 @@ async def test_embers():
     from app.executors.azure_exec import transcript
     assert transcript.usage_tokens("line\nUSAGE_TOKENS: 4321\n") == 4321
     assert transcript.usage_tokens("no usage here") == 0
+    # The agent prints a RUNNING total each step so a hard abort still leaves a
+    # count; the parser takes the LAST one (the most complete total).
+    assert transcript.usage_tokens(
+        "USAGE_TOKENS: 100\nUSAGE_TOKENS: 250\nUSAGE_TOKENS: 4321\n") == 4321
     print("ok    embers: rate, trial grant, afford gate, burn, usage parse")
 
 
