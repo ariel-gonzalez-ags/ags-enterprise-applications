@@ -160,7 +160,12 @@ class AzureExecutor:
                     break
                 live = await _blocking(lifecycle.read_logs, az, sb)
                 if live and live != last_log:
-                    for line in live[len(last_log):].splitlines():
+                    # customer_log strips the platform bootstrap (pip, az login,
+                    # the base64 payload) from the raw container stream so the
+                    # live console feed only ever shows the agent's own work.
+                    visible = transcript_log.customer_log(live)
+                    prior = transcript_log.customer_log(last_log)
+                    for line in visible[len(prior):].splitlines():
                         if line.strip():
                             emit(line)
                             yield line
@@ -177,7 +182,14 @@ class AzureExecutor:
                 dbg = await _blocking(lifecycle.debug_state, az, sb)
                 emit(f"(no agent logs retrieved; {dbg})")
                 yield log[-1]
-            for line in transcript.splitlines():
+            # Same guard for the persisted run.log: only the agent's own output,
+            # never the bootstrap preamble, reaches the customer artifact. And
+            # only emit the NEW tail: the live loop above already streamed the
+            # earlier lines into live_log, so re-emitting the full transcript
+            # here would duplicate them in run.log.
+            visible_transcript = transcript_log.customer_log(transcript)
+            prior_visible = transcript_log.customer_log(last_log)
+            for line in visible_transcript[len(prior_visible):].splitlines():
                 emit(line)
                 yield line
 

@@ -5,6 +5,29 @@ SUMMARY: line. These helpers turn that text into a RunResult. Pure functions,
 no Azure, no state: split from executor.py to keep the orchestration lean."""
 from __future__ import annotations
 
+# The container's stdout starts with platform bootstrap (pip installs,
+# `az login --identity`, `az account set`, the base64 agent payload). None of
+# that is the agent's work: it is our mechanism, it is ugly, and it must never
+# reach a customer-facing run.log. command_for() already silences bootstrap
+# stdout, but this is the render-side guard (defense in depth): anything logged
+# before the agent loop's first output line is dropped. The agent loop always
+# opens with a USAGE_TOKENS line, which is a stable sentinel.
+def customer_log(text: str) -> str:
+    """Strip the platform bootstrap preamble from a raw container transcript,
+    leaving only the agent's own output (its tool calls, results, markers).
+    Idempotent: a transcript that already starts at the agent loop is returned
+    unchanged. Falls back to the full text if no agent marker is found, so a
+    run that died before the agent loop still shows *something* diagnosable."""
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        s = line.strip()
+        if s.startswith("USAGE_TOKENS:") or s.startswith("tool:") \
+                or s.startswith("agent:") or s in ("DONE", "INCOMPLETE") \
+                or s.startswith("INFEASIBLE:") or s.startswith("BLOCKED:") \
+                or s.startswith("VERIFY-RESULT:") or s.startswith("===AGS-FILE-BEGIN:"):
+            return "\n".join(lines[i:])
+    return text
+
 
 def declared_done(text: str) -> bool:
     """True only on a standalone DONE line. INCOMPLETE (the failure signal)

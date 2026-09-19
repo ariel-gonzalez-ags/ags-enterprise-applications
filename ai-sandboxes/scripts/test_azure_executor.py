@@ -465,6 +465,64 @@ async def test_executor_end_to_end_in_container():
     print("ok    executor: provision -> agent-in-container -> verify -> teardown + artifacts")
 
 
+# A container transcript that INCLUDES the platform bootstrap (pip, az login,
+# the base64 agent payload) before the agent loop's first USAGE_TOKENS line.
+_TRANSCRIPT_WITH_BOOTSTRAP = """+ python3 -m ensurepip
+Successfully installed pip
++ az login --identity --allow-no-subscriptions
++ az account set --subscription b96e9ee3-4348-499e-abda-d03336e1fcbd
++ echo CmltcG9ydCBqc29uIGJhc2U2NCBwYXlsb2Fk | base64 -d
++ python3 /tmp/agent.py
+""" + _TRANSCRIPT
+
+
+async def test_customer_log_strips_bootstrap():
+    # transcript.customer_log: drops everything before the agent loop's first
+    # marker (the platform bootstrap), so run.log shows only the agent's work.
+    from app.executors.azure_exec import transcript
+    out = transcript.customer_log(_TRANSCRIPT_WITH_BOOTSTRAP)
+    assert "az login" not in out and "ensurepip" not in out, out
+    assert "base64" not in out and "echo CmltcG9yd" not in out, out
+    assert "az account set" not in out, out
+    # the agent's own work is preserved verbatim
+    assert "az storage account create" in out, out
+    assert "VERIFY-RESULT: exit=0" in out and "DONE" in out, out
+    # idempotent on an agent-only transcript (modulo trailing-newline
+    # normalization from split/join)
+    assert transcript.customer_log(_TRANSCRIPT).rstrip("\n") == _TRANSCRIPT.rstrip("\n")
+    # no agent marker at all -> keep the full text so a pre-loop crash is visible
+    crash = "some early failure\nno agent markers\n"
+    assert transcript.customer_log(crash) == crash
+    print("ok    transcript: customer_log strips bootstrap, keeps agent work, falls back on no marker")
+
+
+async def test_run_log_excludes_internals():
+    # End to end: a container whose logs contain the bootstrap still yields a
+    # run.log (the emitted live_log) with NO platform internals, only the agent.
+    from app.executors.azure_exec.executor import AzureExecutor
+    s = _settings(EXECUTOR_BACKEND="azure", GEMINI_API_KEY="k")
+    az = _fake_az(log_text=_TRANSCRIPT_WITH_BOOTSTRAP, state="Succeeded")
+    ex = AzureExecutor(s, az_clients=az)
+    payload = RunPayload(run_id="task-hygiene", image="", commands=[], env={
+        "AGS_TASK": "task-hygiene", "AGS_OWNER": "owner-1", "AGS_ORG": "org-1",
+        "AGS_REQUIREMENT": "make a storage account",
+        "AGS_OUTPUTS": "runbook.md", "AGS_MODEL": "gemini-2.5-flash",
+    }, timeout_seconds=60)
+    # Drain the async generator (that is what runs the executor to completion);
+    # the transcript itself is read from ex.live_log below, not the yielded lines.
+    _ = [line async for line in ex.run(payload)]
+    res = ex.result()
+    assert res.ok is True, res.note
+    run_log = "\n".join(ex.live_log)
+    assert "az login --identity" not in run_log, "run.log leaked az login"
+    assert "ensurepip" not in run_log, "run.log leaked pip bootstrap"
+    assert "base64 -d" not in run_log, "run.log leaked the base64 payload"
+    assert "az account set" not in run_log, "run.log leaked the subscription wiring"
+    # the agent's actual commands ARE present, in full
+    assert "az storage account create" in run_log, "run.log lost the agent's work"
+    print("ok    executor: run.log excludes platform internals, keeps full agent commands")
+
+
 async def test_executor_failed_run_returns_not_ok():
     from app.executors.azure_exec.executor import AzureExecutor
     s = _settings(EXECUTOR_BACKEND="azure", GEMINI_API_KEY="k")
@@ -647,6 +705,8 @@ async def main():
     await test_embers()
     await test_rate_limits()
     await test_executor_end_to_end_in_container()
+    await test_customer_log_strips_bootstrap()
+    await test_run_log_excludes_internals()
     await test_executor_failed_run_returns_not_ok()
     await test_missing_deliverable_is_not_verified()
     await test_done_without_verify_evidence_is_not_verified()
