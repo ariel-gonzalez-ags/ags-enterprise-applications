@@ -123,6 +123,11 @@ class AzureExecutor:
                 "AGS_REQUIREMENT": payload.env.get("AGS_REQUIREMENT", ""),
                 "AGS_MODEL": payload.env.get("AGS_MODEL", self._settings.gemini_model),
                 "AGS_RG": sb.rg_name,
+                # The agent must know its subscription: without it, az CLI calls
+                # that need subscription context (az cosmosdb, az account list)
+                # resolve against the TENANT and fail SubscriptionNotFound, so the
+                # agent builds nothing and may still declare done. (Real run bug.)
+                "AZURE_SUBSCRIPTION_ID": self._settings.azure_subscription_id,
                 "AGS_TAGS": "; ".join(f"{k}={v}" for k, v in tags.items()),
                 "AGS_OUTPUTS": payload.env.get("AGS_OUTPUTS", ""),
                 "AGS_BUDGET_SECONDS": str(budget_seconds),

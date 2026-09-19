@@ -310,11 +310,14 @@ def command_for() -> list[str]:
             "python3 -m pip install --target=/app/pylibs openai 2>&1 | tail -5; "
             "export PYTHONPATH=/app/pylibs; "
             "python3 -c 'import openai; print(\"openai\", openai.__version__)' 2>&1; "
-            # Authenticate as the attached per-RG managed identity. provision()
-            # already blocked until the identity's role assignment propagated,
-            # so a single login should succeed; we still show account show for
-            # the transcript. The agent's az calls are RBAC-scoped to its RG.
+            # Authenticate as the attached per-RG managed identity, THEN set the
+            # subscription context. Login used --allow-no-subscriptions, so without
+            # `az account set` the CLI has no default subscription and any command
+            # needing one (az cosmosdb, az account list) resolves against the
+            # tenant and fails SubscriptionNotFound. provision() already blocked
+            # until the identity's role assignment propagated, so these succeed.
             "az login --identity --allow-no-subscriptions 2>&1 | tail -2 || true; "
+            "az account set --subscription \\\"$AZURE_SUBSCRIPTION_ID\\\" 2>&1 | tail -2 || true; "
             "az account show 2>&1 | tail -3 || true; "
             f"echo {b64} | base64 -d > /tmp/agent.py && "
             "PYTHONPATH=/app/pylibs python3 /tmp/agent.py"]
