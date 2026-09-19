@@ -1,33 +1,24 @@
 """Launch the agent inside the sandbox ACI container.
 
-The agent's body is the SCRIPT string in agent_script.py (split out for size,
-rule 1); this module only builds the container command that delivers and runs
-it: base64 the script, bootstrap pip, authenticate as the sandbox's managed
-identity (so every az call is RBAC-scoped to its own resource group), then exec.
+The curated ghcr image (TODO 14b) already carries the toolchain and the
+runnable agent at /opt/ags/agent.py (materialized from agent_script.SCRIPT at
+image build time). So the container command is just: authenticate to Azure as
+the sandbox's managed identity (so every az call is RBAC-scoped to its own
+resource group), then run the baked agent. No base64 payload, no runtime pip
+bootstrap -- that cold-start cost and failure surface moved to image build.
 """
 from __future__ import annotations
 
-from .agent_script import SCRIPT  # noqa: F401  (re-export; the agent payload)
+from .agent_script import SCRIPT  # noqa: F401  (re-export; kept in sync with the baked /opt/ags/agent.py)
 
 def command_for() -> list[str]:
-    """The ACI container command: install the toolchain, authenticate to Azure
-    as the sandbox's managed identity (so every az call is RBAC-scoped to its
-    own resource group), then run the agent script (base64, no custom image).
+    """The ACI container command: authenticate to Azure as the sandbox's
+    managed identity, then run the agent baked into the image. No `set -x` and
+    the login preamble's stdout is silenced: it is platform plumbing, and the
+    container's stdout becomes the customer-visible run.log -- tracing it leaks
+    our mechanism. Only failures (stderr) surface here.
     """
-    import base64
-    b64 = base64.b64encode(SCRIPT.encode()).decode()
-    return ["sh", "-c",
-            # No `set -x` and bootstrap stdout is silenced: this preamble (pip,
-            # az login, the base64 payload) is platform plumbing, and the
-            # container's stdout becomes the customer-visible run.log. Tracing it
-            # leaks our mechanism AND dumps an ugly base64 wall. Only failures
-            # (stderr) surface here; the agent's own output starts at /tmp/agent.py.
-            # azure-cli base has python3 but no pip. Bootstrap pip into a
-            # self-contained dir and put it on PYTHONPATH so a partial system
-            # pip can't break the import (the ACI failure mode we hit).
-            "python3 -m ensurepip >/dev/null 2>&1; "
-            "python3 -m pip install --quiet --target=/app/pylibs openai >/dev/null 2>&1; "
-            "export PYTHONPATH=/app/pylibs; "
+    return ["bash", "-lc",
             # Authenticate as the attached per-RG managed identity, THEN set the
             # subscription context. Login used --allow-no-subscriptions, so without
             # `az account set` the CLI has no default subscription and any command
@@ -38,5 +29,5 @@ def command_for() -> list[str]:
             # No quotes around the id: it is a GUID (safe), and baked-in quotes
             # made az account set fail with a malformed subscription id (real bug).
             "az account set --subscription $AZURE_SUBSCRIPTION_ID >/dev/null 2>&1 || true; "
-            f"echo {b64} | base64 -d > /tmp/agent.py && "
-            "PYTHONPATH=/app/pylibs python3 /tmp/agent.py"]
+            # The agent loop + the openai dep are baked into the image.
+            "exec python3 /opt/ags/agent.py"]
