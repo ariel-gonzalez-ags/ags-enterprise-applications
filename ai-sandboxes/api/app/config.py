@@ -38,6 +38,10 @@ class Settings:
     # Trial gate: when on (and Stripe configured), the trial allowance is granted
     # only after the user puts a card on file (a $0 SetupIntent). Anti-multi-account.
     stripe_card_gate: bool = True
+    # Rate limits (TODO #6): cap a single user's blast radius even if they beat
+    # the card gate. 0 disables a limit. sandbox_hours/day uses UTC day.
+    ratelimit_max_concurrent: int = 2        # running sandboxes per user at once
+    ratelimit_max_sandbox_hours_day: float = 8.0  # sandbox compute per user per day
 
     @property
     def oauth_configured(self) -> bool:
@@ -95,4 +99,6 @@ def load() -> Settings:
         stripe_webhook_secret=os.getenv("STRIPE_WEBHOOK_SECRET", ""),
         ember_min_topup_usd=float(os.getenv("EMBER_MIN_TOPUP_USD", "10")),
         stripe_card_gate=os.getenv("STRIPE_CARD_GATE", "1") == "1",
+        ratelimit_max_concurrent=int(os.getenv("RATELIMIT_MAX_CONCURRENT", "2")),
+        ratelimit_max_sandbox_hours_day=float(os.getenv("RATELIMIT_MAX_SANDBOX_HOURS_DAY", "8")),
     )

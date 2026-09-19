@@ -7,7 +7,7 @@ from fastapi.responses import PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from .. import db, embers, events, killswitch, planner, runner
+from .. import db, embers, events, killswitch, planner, ratelimit, runner
 from ..config import Settings
 from ..models import Artifact, Message, Task
 from ._common import require_user, settings_of
@@ -338,6 +338,10 @@ async def approve(task_id: str, request: Request, user: dict = Depends(_user)):
             raise HTTPException(
                 402, f"insufficient Embers: balance {bal}, estimated cost {est}. "
                      "Top up to run more sandboxes.")
+        # Rate limits (TODO #6): cap velocity, not just total spend. 429.
+        ok, reason = await ratelimit.check_rate_limits(user["sub"], settings)
+        if not ok:
+            raise HTTPException(429, reason)
         t.state = "running"
         t.checks_passed = 0
         await s.commit()

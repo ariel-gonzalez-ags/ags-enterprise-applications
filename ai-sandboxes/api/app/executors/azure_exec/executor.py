@@ -49,6 +49,7 @@ class AzureExecutor:
         self._result = RunResult(ok=False, exit_code=-1, log="", note="not run")
         self._sb = None        # live sandbox, so abort() can tear it down
         self.aborted = False
+        self._teardown_proof = {}  # set in run()'s finally after teardown (#13)
 
     def result(self) -> RunResult:
         return self._result
@@ -237,8 +238,14 @@ class AzureExecutor:
             # a synchronous teardown both keep the RG from leaking.
             try:
                 proof = await _blocking(lifecycle.teardown, az, self._settings, sb)
+                self._teardown_proof = proof
+                # Stamp the proof onto the result now (the result was built before
+                # teardown ran, so it could not carry it then). (#13)
+                self._result.teardown_proof = proof
                 msg = (f"Sandbox {proof['resource_group']} torn down in "
                        f"{proof['duration_seconds']}s; cost event recorded.")
+                if not proof.get("verified_gone"):
+                    msg += " WARNING: teardown could not confirm the RG is gone."
                 emit(msg)
                 try:
                     yield msg
