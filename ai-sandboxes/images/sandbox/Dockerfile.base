@@ -1,0 +1,67 @@
+# syntax=docker/dockerfile:1
+# Agisphire sandbox agent -- CLOUD-AGNOSTIC base image.
+#
+# This is the "literally anything" image every sandbox runs on: a pinned slim
+# python + the general-purpose toolchain (git/curl/jq/yq/make, kubectl,
+# terraform) + the agent script + its only pip dep (openai). It carries NO
+# cloud CLI on purpose -- per-cloud variants layer az/aws/gcloud on top of this
+# base (see Dockerfile.azure / .aws / .gcp), so a host pulls base once and only
+# the thin cloud layer per run, and a task that isn't cloud-bound never pays
+# for a cloud CLI it doesn't need.
+#
+# Built and pushed to ghcr.io by .github/workflows/sandbox-images.yml.
+# Base image pinned by digest (house style) so builds are reproducible.
+
+FROM python:3.13-slim@sha256:8d9d0b8bcf6506481eae4907c18f5e3e7902e629f5f6d684f9e7c32e85e3ddf0
+
+# Tool versions pinned at build time (bump deliberately, rebuild, repin).
+ARG TERRAFORM_VERSION=1.16.3
+ARG KUBECTL_VERSION=1.37.0
+ARG OPENAI_VERSION=3.16.2
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    # Agent + tools run as the sandbox; nothing here needs root at runtime.
+    HOME=/home/sandbox
+
+# General-purpose shell/ops toolchain. --no-install-recommends + a cleaned apt
+# list keep the layer small (the TODO sizing note: base target ~150MB).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates curl git jq unzip make bash \
+    && rm -rf /var/lib/apt/lists/*
+
+# yq (single static binary, complements jq for YAML).
+ARG YQ_VERSION=4.44.3
+RUN curl -fsSL "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64" \
+        -o /usr/local/bin/yq \
+    && chmod +x /usr/local/bin/yq
+
+# kubectl + terraform: single static Go binaries, version-pinned.
+RUN curl -fsSL "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
+        -o /usr/local/bin/kubectl \
+    && chmod +x /usr/local/bin/kubectl \
+    && curl -fsSL "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip" \
+        -o /tmp/terraform.zip \
+    && unzip -q /tmp/terraform.zip -d /usr/local/bin \
+    && rm /tmp/terraform.zip
+
+# The agent's only runtime dependency (it is otherwise stdlib-only). Installed
+# into the image so a run needs no ensurepip/pip bootstrap (cuts ~1 min of
+# billable sandbox cold start and removes a failure surface).
+RUN pip install --no-cache-dir "openai==${OPENAI_VERSION}"
+
+# The agent loop, baked in (no base64-over-command shim once the image is used).
+WORKDIR /opt/ags
+COPY agent_script.py /opt/ags/agent_script.py
+
+# Non-root runtime user.
+RUN useradd --create-home --uid 10001 sandbox
+USER sandbox
+WORKDIR /home/sandbox
+
+# The image's job is to run the agent loop; the executor supplies the command.
+# agent_script.py exposes SCRIPT (the ReAct loop source). The executor execs it
+# with the task env. Default entrypoint is a shell so the executor controls it.
+CMD ["bash"]
