@@ -153,6 +153,28 @@ the user before implementing**. See "Evolution path".
   rendering balance, an allowance progress bar (spent vs granted), aggregate
   stats, and a per-run history from `/api/embers`. Linked from ConsoleNav; the
   nav `active` state is path-aware (`Astro.url.pathname`).
+  **Billing (Phase 2b: Stripe).** Server-side secret key only; the browser is
+  always redirected to a Stripe-hosted Checkout page, so card numbers never
+  touch our servers (PCI scope stays with Stripe). This is Stripe's standard
+  integration model: a bearer secret for server-to-API calls + a webhook signing
+  secret to verify inbound events. `app/billing.py` owns the Stripe logic; one
+  Stripe Customer per user (keyed by Google `sub`, cached on
+  `EmberAccount.stripe_customer_id`). Endpoints (`routers/billing.py`, under
+  `/api/billing`): `GET /config` (enabled, peg, min, card_on_file), `POST
+  /topup` (custom USD amount, `EMBER_MIN_TOPUP_USD` floor, returns a Checkout
+  URL), `POST /card-setup` (a $0 setup-mode Checkout = the trial gate), and
+  `POST /webhook` (UNAUTHENTICATED by design; the Stripe signature is the auth;
+  an event that fails verification is 400 and never touches the ledger). Embers
+  move ONLY in the webhook on `checkout.session.completed`: a payment session
+  credits the purchased Embers (`topup`), a setup session flips `card_on_file`
+  and grants the trial (`trial_grant`). A client can never credit itself.
+  **Card-gated trial:** with `STRIPE_CARD_GATE=1` (default) and Stripe
+  configured, `embers.get_or_create` holds the trial allowance until
+  `card_on_file` is true (the anti-multi-account control). UI: `/usage` shows an
+  "Unlock your trial" banner (no card) and an "Add Embers" top-up card (credit
+  packs from `content/usage.js` `packs` + a custom amount, $10 min), both wired
+  in `usage.js`. All Stripe SDK calls are sync -> wrapped in `asyncio.to_thread`
+  (same discipline as the Azure SDK).
   **Kill switch (TODO #7).** A running task can be stopped mid-flight:
   `POST /api/tasks/{id}/abort` (owner-scoped, 409 unless running) calls
   `killswitch.request_abort(task_id)`, which flags the run and force-tears-down

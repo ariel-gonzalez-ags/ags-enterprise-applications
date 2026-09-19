@@ -5,6 +5,9 @@ itsdangerous==2.2.*
 sqlalchemy[asyncio]==2.0.*
 aiosqlite==0.21.*
 openai==2.*
+# Stripe for Ember top-up + card-gated trial (Phase 2b). Server-side only; the
+# browser is redirected to Stripe-hosted Checkout, so we never touch card data.
+stripe==12.*
 # Azure management SDKs for the stage-2 sandbox executor (control plane:
 # resource groups, managed identities, RBAC, ACI). Auth via azure-identity.
 azure-identity==1.25.*

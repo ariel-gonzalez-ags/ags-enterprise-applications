@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import db
 from .config import load
-from .routers import auth, meta, tasks
+from .routers import auth, billing, meta, tasks
 
 
 def create_app() -> FastAPI:
@@ -45,11 +45,13 @@ def create_app() -> FastAPI:
             "oauth_configured": settings.oauth_configured,
             "planner_configured": settings.planner_configured,
             "azure_configured": settings.azure_configured,
+            "stripe_configured": settings.stripe_configured,
         }
 
     app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
     app.include_router(tasks.router, prefix="/api", tags=["tasks"])
     app.include_router(meta.router, prefix="/api", tags=["meta"])
+    app.include_router(billing.router, prefix="/api", tags=["billing"])
     return app
 
 

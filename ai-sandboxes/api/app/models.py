@@ -121,6 +121,25 @@ class EmberAccount(Base):
     owner_sub: Mapped[str] = mapped_column(String(64), primary_key=True)
     balance: Mapped[int] = mapped_column(Integer, default=0)
     trial_granted: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Stripe (Phase 2b): the user's Stripe customer id, and whether they have a
+    # card on file (the trial gate: trial is granted only once a card exists).
+    stripe_customer_id: Mapped[str] = mapped_column(String(64), default="")
+    card_on_file: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Set when the card used was already tied to another account's trial: the
+    # trial is permanently withheld from this account (one trial per card).
+    trial_blocked: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[int] = mapped_column(Integer, default=now)
+
+
+class CardFingerprint(Base):
+    """One row per physical card, keyed by Stripe's card fingerprint (stable
+    across customers/accounts). This is the anti-multi-account control: a trial
+    is granted only once per card, no matter how many Google accounts reuse it.
+    first_owner_sub records who unlocked a trial with it (audit)."""
+    __tablename__ = "card_fingerprints"
+
+    fingerprint: Mapped[str] = mapped_column(String(64), primary_key=True)
+    first_owner_sub: Mapped[str] = mapped_column(String(64), default="")
     created_at: Mapped[int] = mapped_column(Integer, default=now)
 
 

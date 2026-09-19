@@ -13,6 +13,8 @@
       prevBtn = $('prev'), nextBtn = $('next');
 
   var DATA = null;
+  var BILLING = null;   // from /api/billing/config
+  var pickedUsd = null; // selected pack amount (custom input overrides)
   // monthOffset: null = all time; 0 = current month; -1 = last month; etc.
   var monthOffset = null;
 
@@ -63,6 +65,71 @@
   function cell(cls, text) {
     var s = document.createElement('span'); s.className = cls; s.textContent = text; return s;
   }
+
+  /* ---- billing: card gate + top-up (Stripe-hosted; we only redirect) ---- */
+  var gateEl = $('card-gate'), gateGo = $('card-gate-go'),
+      topupCard = $('topup-card'), topupGo = $('topup-go'),
+      customUsd = $('custom-usd'), topupErr = $('topup-err');
+
+  function renderBilling() {
+    if (!BILLING || !BILLING.enabled) return;   // billing off: hide both panels
+    // Card gate: only for a user with no card on file (trial not yet unlocked).
+    if (gateEl) gateEl.hidden = !!BILLING.card_on_file;
+    if (topupCard) topupCard.hidden = false;
+  }
+
+  function goCheckout(url) { window.location.assign(url); }
+
+  function postForUrl(path, body, onErr) {
+    return fetch(path, {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined,
+    }).then(function (r) {
+      return r.json().then(function (d) {
+        if (!r.ok) throw new Error(d.detail || 'error');
+        return d;
+      });
+    }).then(function (d) { if (d.checkout_url) goCheckout(d.checkout_url); })
+      .catch(function (e) { if (onErr) onErr(e); });
+  }
+
+  function showErr(msg) {
+    if (!topupErr) return;
+    topupErr.textContent = msg; topupErr.hidden = !msg;
+  }
+
+  var packs = document.querySelectorAll('[data-usage="pack"]');
+  function clearPacks() { packs.forEach(function (b) { b.classList.remove('sel'); }); }
+  // Pack buttons select an amount; typing a custom amount deselects them.
+  packs.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      clearPacks(); btn.classList.add('sel');
+      pickedUsd = parseFloat(btn.getAttribute('data-usd'));
+      if (customUsd) customUsd.value = '';
+      showErr('');
+    });
+  });
+  if (customUsd) customUsd.addEventListener('input', function () {
+    if (customUsd.value) { clearPacks(); pickedUsd = null; }
+  });
+
+  if (topupGo) topupGo.addEventListener('click', function () {
+    var usd = pickedUsd || parseFloat(customUsd && customUsd.value);
+    var min = (BILLING && BILLING.min_topup_usd) || 10;
+    if (!usd || isNaN(usd)) { showErr('Pick an amount or enter one.'); return; }
+    if (usd < min) { showErr('Minimum is $' + min + '.'); return; }
+    showErr('');
+    topupGo.disabled = true;
+    postForUrl('/api/billing/topup', { usd: usd }, function (e) {
+      topupGo.disabled = false; showErr(e.message || 'Could not start checkout.');
+    });
+  });
+
+  if (gateGo) gateGo.addEventListener('click', function () {
+    gateGo.disabled = true;
+    postForUrl('/api/billing/card-setup', null, function () { gateGo.disabled = false; });
+  });
 
   function render() {
     var data = DATA;
@@ -154,10 +221,29 @@
     render();
   });
 
-  fetch('/api/embers', { credentials: 'same-origin' })
-    .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
-    .then(function (data) { DATA = data; render(); })
-    .catch(function () {
-      if (histEl) { histEl.innerHTML = ''; histEl.appendChild(empty('Could not load usage. Try refreshing.')); }
-    });
+  function loadBilling() {
+    return fetch('/api/billing/config', { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+      .then(function (cfg) { BILLING = cfg; renderBilling(); })
+      .catch(function () { /* billing hidden */ });
+  }
+  function loadEmbers() {
+    return fetch('/api/embers', { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+      .then(function (data) { DATA = data; render(); })
+      .catch(function () {
+        if (histEl) { histEl.innerHTML = ''; histEl.appendChild(empty('Could not load usage. Try refreshing.')); }
+      });
+  }
+  function loadAll() { loadEmbers(); loadBilling(); }
+
+  // Returning from Stripe (card saved / top-up paid) lands us back here with a
+  // query param. The webhook may still be in flight, so re-fetch a couple of
+  // times to catch the credited balance / flipped card flag, then clean the URL.
+  var ret = new URLSearchParams(window.location.search);
+  loadAll();
+  if (ret.has('card') || ret.has('topup')) {
+    [1200, 3000].forEach(function (ms) { setTimeout(loadAll, ms); });
+    window.history.replaceState({}, '', window.location.pathname);
+  }
 })();
