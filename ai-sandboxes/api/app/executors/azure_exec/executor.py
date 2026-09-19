@@ -189,6 +189,19 @@ class AzureExecutor:
                 emit(f"declared done but missing deliverable(s): {', '.join(missing)}")
                 yield log[-1]
                 done = False
+            # Done alone is just the agent's word. Verified requires EVIDENCE:
+            # at least one verify_outcome check (a command the agent chose to
+            # exercise the requirement) that actually exited 0. This is
+            # domain-agnostic: we check THAT a check passed, not WHAT it
+            # checked, so it works for any request. The captured output lands in
+            # verify.log as user-readable evidence.
+            evidence = transcript_log.verify_evidence(transcript)
+            passing = [c for c, _out in evidence if c == 0]
+            if done and not passing:
+                emit("declared done but no verification check passed "
+                     f"({len(evidence)} attempt(s), none exit 0)")
+                yield log[-1]
+                done = False
             ok = done and state == "Succeeded"
             if self.aborted:
                 note = "aborted by user"

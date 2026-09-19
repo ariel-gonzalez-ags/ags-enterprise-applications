@@ -73,6 +73,24 @@ def write_file(path, content):
     except Exception as e:
         return f"(error) {type(e).__name__}: {e}"
 
+def verify_outcome(command):
+    # Run the agent's chosen verification check and emit its REAL exit code +
+    # output under VERIFY markers the platform parses. This is the evidence
+    # that turns "the agent claims it verified" into "a check actually ran and
+    # passed". The platform only stamps verified when a VERIFY-RESULT exits 0.
+    try:
+        p = subprocess.run(command, shell=True, capture_output=True,
+                           text=True, timeout=300)
+        out = (p.stdout + p.stderr).strip()
+        code = p.returncode
+    except Exception as e:
+        out = "%s: %s" % (type(e).__name__, e)
+        code = -1
+    print("VERIFY-RESULT: exit=%d" % code, flush=True)
+    print(out[:4000], flush=True)
+    print("VERIFY-END", flush=True)
+    return clip("(exit %d) %s" % (code, out))
+
 def fetch_docs(url):
     # Pull a doc page and return a trimmed excerpt, so the agent consults
     # current official docs instead of guessing from training data.
@@ -145,6 +163,15 @@ TOOLS = [
         "confirm current resource/provider arguments instead of guessing.",
         "parameters": {"type": "object", "properties": {"url": {"type": "string"}},
                        "required": ["url"]}}},
+    {"type": "function", "function": {"name": "verify_outcome", "description":
+        "Prove the outcome holds by running a check command you choose, "
+        "appropriate to whatever the task built (query the resource, hit the "
+        "endpoint, run the assertion). MANDATORY before declare_done: "
+        "the run is ONLY verified if at least one verify_outcome exits 0. Pick "
+        "a check that actually exercises the requirement; its real output is "
+        "captured as evidence the user reads.",
+        "parameters": {"type": "object", "properties": {"command": {"type": "string"}},
+                       "required": ["command"]}}},
     {"type": "function", "function": {"name": "declare_done", "description":
         "Declare the outcome achieved and verified.",
         "parameters": {"type": "object", "properties": {"summary": {"type": "string"}},
@@ -157,7 +184,11 @@ SYSTEM = ("You are the Agisphire sandbox agent inside an ephemeral Azure sandbox
           "resource group. Prefer the Azure Python SDK (azure-identity + "
           "azure-mgmt-*) via run_shell python, or the az CLI; both use the managed "
           "identity. Prefer cheap serverless resources (storage, key vault). Tag "
-          "everything you create with the given tags. Then VERIFY the outcome holds. "
+          "everything you create with the given tags. Then PROVE the outcome holds: "
+          "call verify_outcome with a check command you choose that actually "
+          "exercises the requirement (query the resource you built, hit the "
+          "endpoint, run the assertion). The run is ONLY marked verified if a "
+          "verify_outcome call exits 0; its real output is captured as evidence. "
           "MANDATORY before declare_done: use write_file to create EVERY one of these "
           "exact deliverable files: " + ", ".join(OUTPUTS) + ". Each must contain the "
           "real result (e.g. main.tf holds working terraform for the resources you "
@@ -233,6 +264,8 @@ for step in range(1, MAX_STEPS + 1):
             break
         if name == "run_shell":
             result = run_shell(args.get("command", ""))
+        elif name == "verify_outcome":
+            result = verify_outcome(args.get("command", ""))
         elif name == "write_file":
             result = write_file(args.get("path", ""), args.get("content", ""))
         elif name == "fetch_docs":

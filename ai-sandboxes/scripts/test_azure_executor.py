@@ -422,6 +422,10 @@ async def test_rate_limits():
 _TRANSCRIPT = """agent: planning
 tool: run_shell {"command": "az storage account create ..."}
   -> (exit 0) created
+tool: verify_outcome {"command": "az resource show --ids <id> --query properties.provisioningState"}
+VERIFY-RESULT: exit=0
+"Succeeded"
+VERIFY-END
 DONE
 SUMMARY: storage account + key vault created and tagged
 ===AGS-FILE-BEGIN:runbook.md
@@ -496,6 +500,52 @@ async def test_missing_deliverable_is_not_verified():
     print("ok    executor: declared-done with a missing deliverable is rejected, not verified")
 
 
+async def test_done_without_verify_evidence_is_not_verified():
+    # The core of the evidence contract: declare_done alone is just the agent's
+    # word. A run that writes its files and claims done but never ran a passing
+    # verify_outcome check must NOT be stamped verified, even with exit 0.
+    from app.executors.azure_exec.executor import AzureExecutor
+    s = _settings(EXECUTOR_BACKEND="azure", GEMINI_API_KEY="k")
+    base = ("DONE\nSUMMARY: built it\n"
+            "===AGS-FILE-BEGIN:runbook.md\nstuff\n===AGS-FILE-END:runbook.md\n")
+    # (a) no verify_outcome at all -> not verified
+    az = _fake_az(log_text=base, state="Succeeded", exit_code=0)
+    ex = AzureExecutor(s, az_clients=az)
+    payload = RunPayload(run_id="tv1", image="", commands=[], env={
+        "AGS_TASK": "tv1", "AGS_REQUIREMENT": "x", "AGS_OUTPUTS": "runbook.md"},
+        timeout_seconds=60)
+    async for _ in ex.run(payload):
+        pass
+    assert ex.result().ok is False, "done with no verify evidence must not verify"
+    # (b) a verify_outcome that FAILED (exit != 0) -> not verified
+    failing = ("tool: verify_outcome {\"command\": \"check\"}\n"
+               "VERIFY-RESULT: exit=1\nnot actually compliant\nVERIFY-END\n" + base)
+    az2 = _fake_az(log_text=failing, state="Succeeded", exit_code=0)
+    ex2 = AzureExecutor(s, az_clients=az2)
+    payload2 = RunPayload(run_id="tv2", image="", commands=[], env={
+        "AGS_TASK": "tv2", "AGS_REQUIREMENT": "x", "AGS_OUTPUTS": "runbook.md"},
+        timeout_seconds=60)
+    async for _ in ex2.run(payload2):
+        pass
+    assert ex2.result().ok is False, "done with a failing verify must not verify"
+    print("ok    executor: declare_done without a PASSING verify_outcome is rejected (#12)")
+
+
+async def test_verify_evidence_parser():
+    # transcript.verify_evidence: last-match per block, captures exit + output,
+    # empty when no verify_outcome ran.
+    from app.executors.azure_exec import transcript
+    assert transcript.verify_evidence("no markers here") == []
+    ev = transcript.verify_evidence(
+        "VERIFY-RESULT: exit=0\ntrue\nVERIFY-END\n")
+    assert ev == [(0, "true")], ev
+    ev2 = transcript.verify_evidence(
+        "VERIFY-RESULT: exit=1\nbad\nVERIFY-END\nVERIFY-RESULT: exit=0\nok\nVERIFY-END\n")
+    assert ev2 == [(1, "bad"), (0, "ok")], ev2
+    print("ok    transcript: verify_evidence parses exit code + output per block")
+
+
+
 async def test_executor_abort_tears_down():
     # Kill switch (TODO #7): a run whose container never finishes is aborted
     # mid-poll; abort() must force-teardown the RG and the run must report not-ok.
@@ -536,6 +586,9 @@ async def main():
     await test_rate_limits()
     await test_executor_end_to_end_in_container()
     await test_executor_failed_run_returns_not_ok()
+    await test_missing_deliverable_is_not_verified()
+    await test_done_without_verify_evidence_is_not_verified()
+    await test_verify_evidence_parser()
     await test_executor_abort_tears_down()
     await test_teardown_proof_stored_as_artifact()
     await test_abort_records_real_meters_and_proof()

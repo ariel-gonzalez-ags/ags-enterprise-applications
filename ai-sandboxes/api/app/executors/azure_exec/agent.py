@@ -115,6 +115,23 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "verify_outcome",
+            "description": "Prove the outcome holds by running a check command "
+                           "you choose (query the resource you built, hit the "
+                           "endpoint, run the assertion). MANDATORY before "
+                           "declare_done: the run is ONLY verified if a "
+                           "verify_outcome exits 0. Its real output is captured "
+                           "as evidence the user reads.",
+            "parameters": {
+                "type": "object",
+                "properties": {"command": {"type": "string"}},
+                "required": ["command"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "declare_done",
             "description": "Declare the outcome achieved. Provide a concise "
                            "summary and the list of artifact file paths produced.",
@@ -139,7 +156,9 @@ Rules:
 - Prefer idempotent, cheap, serverless resources (storage, key vault,
   functions) unless the task needs otherwise.
 - Tag every resource you create with the sandbox tags you are given.
-- Make changes, then VERIFY them (re-read/re-check the desired state holds).
+- Make changes, then PROVE them: call verify_outcome with a check command you
+  choose that actually exercises the requirement (re-read the resource, hit the
+  endpoint, run the assertion). The run is only verified if it exits 0.
 - When the outcome is achieved and verified, call declare_done with a summary
   and the artifact paths. Do not stop early.
 - You have a step budget; be efficient."""

@@ -15,6 +15,34 @@ def declared_done(text: str) -> bool:
     return "DONE" in lines
 
 
+def verify_evidence(text: str) -> list[tuple[int, str]]:
+    """All verification blocks the agent produced via verify_outcome, as a list
+    of (exit_code, output). The agent must prove its claim by running a check
+    command it chose; the harness runs it and emits a VERIFY-RESULT marker with
+    the real exit code + captured output. The platform never trusts declare_done
+    alone: a run is only verified when at least one VERIFY-RESULT exits 0. This
+    is domain-agnostic (we check THAT a check passed, not WHAT it checked), so
+    it works for any request. Empty (no verify_outcome call) -> no evidence."""
+    out: list[tuple[int, str]] = []
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        if line.startswith("VERIFY-RESULT: exit="):
+            try:
+                code = int(line.split("exit=", 1)[1].strip())
+            except ValueError:
+                code = -1
+            buf: list[str] = []
+            i += 1
+            while i < len(lines) and lines[i].strip() != "VERIFY-END":
+                buf.append(lines[i])
+                i += 1
+            out.append((code, "\n".join(buf).strip()))
+        i += 1
+    return out
+
+
 def usage_tokens(text: str) -> int:
     """Total LLM tokens the agent reported via its USAGE_TOKENS lines. The agent
     prints a RUNNING total every step (so a hard abort still leaves the last
